@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { FolderOpen, CheckCircle, AlertCircle, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Upload, Download, Clock } from 'lucide-react';
 import { getSetting, setSetting, SETTING_KEYS } from '../lib/settings';
@@ -160,15 +159,9 @@ export default function Settings() {
       } catch { /* 開発モードではスキップ */ }
 
       if (form.globalShortcut) {
-        try { await unregister(form.globalShortcut); } catch { /* 未登録なら無視 */ }
-        try {
-          const { getCurrentWindow } = await import('@tauri-apps/api/window');
-          const win = getCurrentWindow();
-          await register(form.globalShortcut, async () => {
-            await win.show();
-            await win.setFocus();
-          });
-        } catch { /* ショートカット登録失敗は警告のみ */ }
+        window.dispatchEvent(
+          new CustomEvent('sebastian:shortcut-changed', { detail: form.globalShortcut })
+        );
       }
 
       setSaveStatus('saved');

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { register } from '@tauri-apps/plugin-global-shortcut';
+import { registerShortcut } from './lib/shortcut';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { MainLayout } from './components/layout/MainLayout';
@@ -28,20 +28,26 @@ function AppRoutes() {
   useEffect(() => {
     const appWindow = getCurrentWindow();
 
-    // グローバルショートカット登録
+    const openMemo = async () => {
+      await appWindow.show();
+      await appWindow.setFocus();
+      navigate('/memo');
+    };
+
+    // 起動時にショートカットを登録
     async function setupShortcut() {
       const shortcut = await getSetting(SETTING_KEYS.GLOBAL_SHORTCUT) ?? 'Ctrl+Shift+M';
-      try {
-        await register(shortcut, async () => {
-          await appWindow.show();
-          await appWindow.setFocus();
-          navigate('/memo');
-        });
-      } catch (e) {
-        console.warn('グローバルショートカット登録失敗:', e);
-      }
+      await registerShortcut(shortcut, openMemo);
     }
     setupShortcut();
+
+    // 設定変更時に再登録
+    const handleShortcutChanged = (e: Event) => {
+      const newKey = (e as CustomEvent<string>).detail;
+      registerShortcut(newKey, openMemo);
+    };
+    window.addEventListener('sebastian:shortcut-changed', handleShortcutChanged);
+    return () => window.removeEventListener('sebastian:shortcut-changed', handleShortcutChanged);
   }, [navigate]);
 
   // 終業リマインド
