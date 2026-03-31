@@ -54,9 +54,10 @@
 - 1日の立ち上がりを素早くサポート
 
 ### 終業リマインド
-- 指定時刻にOS通知で「日報を締めませんか？」を通知
+- 指定時刻にアプリ通知で「日報を締めませんか？」を通知（Web Notification API使用）
 - 通知クリックで日報ページへ直接遷移
 - 時刻・平日のみ通知を設定で変更可能
+- 初回起動時にブラウザの通知許可が必要です
 
 ---
 
@@ -101,6 +102,10 @@ npm run tauri build
 **Gemini API（推奨）**
 1. [Google AI Studio](https://aistudio.google.com/apikey) で無料APIキーを取得
 2. 設定画面でAPIキーとモデル（`gemini-2.5-flash`）を入力
+
+> ⚠️ **APIキーの取り扱いについて**
+> APIキーはローカルDBに平文で保存されます。
+> 共有PCや管理外端末への導入は推奨しません。
 
 **Ollama（ローカルLLM）**
 1. [Ollama](https://ollama.com) をインストール

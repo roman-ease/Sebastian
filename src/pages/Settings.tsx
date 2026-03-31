@@ -35,7 +35,7 @@ export default function Settings() {
     autostartEnabled: false,
     aiProvider: 'disabled',
     geminiApiKey: '',
-    geminiModel: 'gemini-2.0-flash',
+    geminiModel: 'gemini-2.5-flash',
     ollamaEndpoint: 'http://localhost:11434',
     ollamaModel: 'qwen2.5:7b',
     reminderEnabled: false,
@@ -288,7 +288,7 @@ export default function Settings() {
                 onChange={e => setForm(f => ({ ...f, geminiModel: e.target.value }))}
               />
               <p className="text-xs text-gray-400">
-                推奨: <span className="font-mono">gemini-2.0-flash</span>（無料・高速）
+                推奨: <span className="font-mono">gemini-2.5-flash</span>（無料・高速）
               </p>
             </div>
           </div>
