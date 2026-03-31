@@ -22,6 +22,39 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_db_path(app: tauri::AppHandle) -> Result<String, String> {
+    app.path()
+        .app_data_dir()
+        .map(|p| p.join("sebastian.db").to_string_lossy().into_owned())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn copy_file(src: String, dest: String) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    let dest_path = Path::new(&dest);
+    if let Some(parent) = dest_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::copy(&src, dest_path).map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn file_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
+
+#[tauri::command]
+fn get_file_mtime(path: String) -> Option<u64> {
+    use std::time::UNIX_EPOCH;
+    std::fs::metadata(&path).ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -114,7 +147,10 @@ pub fn run() {
             setup_tray(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, write_text_file, read_text_file])
+        .invoke_handler(tauri::generate_handler![
+            greet, write_text_file, read_text_file,
+            get_db_path, copy_file, file_exists, get_file_mtime
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

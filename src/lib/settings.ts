@@ -15,6 +15,8 @@ export const SETTING_KEYS = {
   REMINDER_WEEKDAYS_ONLY: 'reminder_weekdays_only',
   LAST_BRIEFING_DATE: 'last_briefing_date',
   THEME: 'theme',
+  SYNC_FOLDER: 'sync_folder',
+  LAST_SYNC_AT: 'last_sync_at',
 } as const;
 
 export async function getSetting(key: string): Promise<string | null> {

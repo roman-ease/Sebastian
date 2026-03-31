@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
-import { FolderOpen, CheckCircle, AlertCircle, Wifi, WifiOff, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { FolderOpen, CheckCircle, AlertCircle, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Upload, Download, Clock } from 'lucide-react';
 import { getSetting, setSetting, SETTING_KEYS } from '../lib/settings';
 import { checkOllamaConnection, checkGeminiConnection, type OllamaStatus } from '../lib/ai';
+import { pushSync, pullSync, getSyncFolderDbMtime } from '../lib/sync';
+import { format } from 'date-fns';
+import { ja } from 'date-fns/locale';
 
 type AiProvider = 'gemini' | 'ollama' | 'disabled';
 
@@ -21,6 +24,7 @@ interface SettingsForm {
   reminderEnabled: boolean;
   reminderTime: string;
   reminderWeekdaysOnly: boolean;
+  syncFolder: string;
 }
 
 export default function Settings() {
@@ -37,7 +41,12 @@ export default function Settings() {
     reminderEnabled: false,
     reminderTime: '18:00',
     reminderWeekdaysOnly: true,
+    syncFolder: '',
   });
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'pushing' | 'pulling' | 'done' | 'error'>('idle');
+  const [syncMsg, setSyncMsg] = useState('');
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [syncFolderDbTime, setSyncFolderDbTime] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -48,7 +57,8 @@ export default function Settings() {
     async function load() {
       const [daily, weekly, shortcut, autostart, autostartActual,
         provider, gemKey, gemModel, olEndpoint, olModel,
-        reminderEnabled, reminderTime, reminderWeekdaysOnly] = await Promise.all([
+        reminderEnabled, reminderTime, reminderWeekdaysOnly,
+        syncFolderSetting, lastSyncAtSetting] = await Promise.all([
         getSetting(SETTING_KEYS.DAILY_REPORT_PATH),
         getSetting(SETTING_KEYS.WEEKLY_REPORT_PATH),
         getSetting(SETTING_KEYS.GLOBAL_SHORTCUT),
@@ -62,7 +72,16 @@ export default function Settings() {
         getSetting(SETTING_KEYS.REMINDER_ENABLED),
         getSetting(SETTING_KEYS.REMINDER_TIME),
         getSetting(SETTING_KEYS.REMINDER_WEEKDAYS_ONLY),
+        getSetting(SETTING_KEYS.SYNC_FOLDER),
+        getSetting(SETTING_KEYS.LAST_SYNC_AT),
       ]);
+      const syncFolderVal = syncFolderSetting ?? '';
+      setLastSyncAt(lastSyncAtSetting ?? null);
+      if (syncFolderVal) {
+        getSyncFolderDbMtime(syncFolderVal).then(mtime => {
+          if (mtime) setSyncFolderDbTime(format(new Date(mtime * 1000), 'M/d HH:mm', { locale: ja }));
+        }).catch(() => {});
+      }
       setForm({
         dailyReportPath: daily ?? '',
         weeklyReportPath: weekly ?? '',
@@ -76,15 +95,21 @@ export default function Settings() {
         reminderEnabled: reminderEnabled === 'true',
         reminderTime: reminderTime ?? '18:00',
         reminderWeekdaysOnly: reminderWeekdaysOnly !== 'false',
+        syncFolder: syncFolderVal,
       });
     }
     load();
   }, []);
 
-  const pickFolder = async (field: 'dailyReportPath' | 'weeklyReportPath') => {
+  const pickFolder = async (field: 'dailyReportPath' | 'weeklyReportPath' | 'syncFolder') => {
     const selected = await open({ directory: true, multiple: false });
     if (selected && typeof selected === 'string') {
       setForm(f => ({ ...f, [field]: selected }));
+      if (field === 'syncFolder') {
+        getSyncFolderDbMtime(selected).then(mtime => {
+          setSyncFolderDbTime(mtime ? format(new Date(mtime * 1000), 'M/d HH:mm', { locale: ja }) : null);
+        }).catch(() => setSyncFolderDbTime(null));
+      }
     }
   };
 
@@ -127,6 +152,7 @@ export default function Settings() {
         setSetting(SETTING_KEYS.REMINDER_ENABLED, String(form.reminderEnabled)),
         setSetting(SETTING_KEYS.REMINDER_TIME, form.reminderTime),
         setSetting(SETTING_KEYS.REMINDER_WEEKDAYS_ONLY, String(form.reminderWeekdaysOnly)),
+        setSetting(SETTING_KEYS.SYNC_FOLDER, form.syncFolder),
       ]);
 
       try {
@@ -151,6 +177,43 @@ export default function Settings() {
       const msg = e instanceof Error ? e.message : String(e);
       setErrorMsg(`保存に失敗しました: ${msg}`);
       setSaveStatus('error');
+    }
+  };
+
+  const handlePush = async () => {
+    if (!form.syncFolder) return;
+    setSyncStatus('pushing');
+    setSyncMsg('');
+    try {
+      await pushSync();
+      const now = new Date().toISOString();
+      setLastSyncAt(now);
+      setSyncFolderDbTime(format(new Date(), 'M/d HH:mm', { locale: ja }));
+      setSyncStatus('done');
+      setSyncMsg('同期フォルダに送り出しました');
+      setTimeout(() => setSyncStatus('idle'), 4000);
+    } catch (e: unknown) {
+      setSyncStatus('error');
+      setSyncMsg(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handlePull = async () => {
+    if (!form.syncFolder) return;
+    const ok = window.confirm(
+      '同期フォルダのDBで現在のデータを上書きします。\n現在のDBは自動的にバックアップされます。\n続けますか？'
+    );
+    if (!ok) return;
+    setSyncStatus('pulling');
+    setSyncMsg('');
+    try {
+      const backupPath = await pullSync();
+      setSyncStatus('done');
+      setSyncMsg(`取り込みました。バックアップ: ${backupPath}`);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e: unknown) {
+      setSyncStatus('error');
+      setSyncMsg(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -388,6 +451,96 @@ export default function Settings() {
             <p className="text-xs text-gray-400">
               ※ 初回起動時にブラウザの通知許可が求められます。許可してください。
             </p>
+          </div>
+        )}
+      </section>
+
+      {/* データ同期 */}
+      <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
+        <div>
+          <h2 className="text-sm font-semibold text-sebastian-navy">データ同期</h2>
+          <p className="text-xs text-gray-400 mt-0.5">OneDrive・USBなど共有フォルダ経由でPCを切り替えます</p>
+        </div>
+
+        {/* 同期フォルダ */}
+        <div className="space-y-2">
+          <label className="block text-sm text-gray-500">同期フォルダ</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              readOnly
+              className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none cursor-pointer"
+              placeholder="フォルダを選択してください（例: OneDrive\Sebastian）"
+              value={form.syncFolder}
+              onClick={() => pickFolder('syncFolder')}
+            />
+            <button
+              onClick={() => pickFolder('syncFolder')}
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+            >
+              <FolderOpen size={16} />
+              参照
+            </button>
+          </div>
+          {form.syncFolder && syncFolderDbTime && (
+            <p className="text-xs text-gray-400 flex items-center gap-1">
+              <Clock size={11} />
+              同期フォルダのDB: {syncFolderDbTime} に更新
+            </p>
+          )}
+          {form.syncFolder && !syncFolderDbTime && (
+            <p className="text-xs text-gray-400">同期フォルダにDBファイルはまだありません（Push後に作成されます）</p>
+          )}
+        </div>
+
+        {/* Push / Pull */}
+        {form.syncFolder && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={handlePush}
+                disabled={syncStatus === 'pushing' || syncStatus === 'pulling'}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-sebastian-navy text-white rounded-lg hover:bg-sebastian-dark transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                <Upload size={15} />
+                {syncStatus === 'pushing' ? '送り出し中...' : 'Push（このPCから送り出す）'}
+              </button>
+              <button
+                onClick={handlePull}
+                disabled={syncStatus === 'pushing' || syncStatus === 'pulling' || !syncFolderDbTime}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                <Download size={15} />
+                {syncStatus === 'pulling' ? '取り込み中...' : 'Pull（このPCに取り込む）'}
+              </button>
+            </div>
+
+            {syncStatus === 'done' && (
+              <div className="flex items-start gap-2 bg-green-50 border border-green-100 rounded-lg px-3 py-2.5 text-sm text-green-700">
+                <CheckCircle size={15} className="flex-shrink-0 mt-0.5" />
+                {syncMsg}
+              </div>
+            )}
+            {syncStatus === 'error' && (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2.5 text-sm text-red-700">
+                <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
+                {syncMsg}
+              </div>
+            )}
+
+            <div className="bg-gray-50 rounded-lg px-3 py-2.5 space-y-1">
+              <p className="text-xs font-medium text-gray-600">使い方</p>
+              <p className="text-xs text-gray-400">出発前：メインPCで Push → サブPCで Pull して作業</p>
+              <p className="text-xs text-gray-400">帰宅後：サブPCで Push → メインPCで Pull して引き継ぎ</p>
+              <p className="text-xs text-gray-400">Pull 実行時は現在のDBが自動バックアップされます</p>
+            </div>
+
+            {lastSyncAt && (
+              <p className="text-xs text-gray-400 flex items-center gap-1">
+                <Clock size={11} />
+                最終同期: {format(new Date(lastSyncAt), 'M月d日 HH:mm', { locale: ja })}
+              </p>
+            )}
           </div>
         )}
       </section>

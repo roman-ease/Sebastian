@@ -18,3 +18,10 @@ export async function selectDb<T>(query: string, bindValues?: unknown[]): Promis
   const db = await getDb();
   return await db.select<T[]>(query, bindValues);
 }
+
+export async function closeDb(): Promise<void> {
+  if (dbInstance) {
+    await dbInstance.close();
+    dbInstance = null;
+  }
+}
