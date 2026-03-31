@@ -14,3 +14,72 @@
     @apply bg-sebastian-bg text-sebastian-dark font-sans antialiased;
   }
 }
+
+/* ─── Dark Theme ─────────────────────────────────────────── */
+html.theme-dark {
+  color-scheme: dark;
+
+  --color-sebastian-bg:        #0f172a;
+  --color-sebastian-navy:      #3b82f6;
+  --color-sebastian-dark:      #2563eb;
+  --color-sebastian-ivory:     #e2e8f0;
+  --color-sebastian-gray:      #94a3b8;
+  --color-sebastian-lightgray: #64748b;
+
+  --color-white:     #1e293b;
+  --color-gray-50:   #1e293b;
+  --color-gray-100:  #293548;
+  --color-gray-200:  #334155;
+  --color-gray-300:  #475569;
+  --color-gray-400:  #64748b;
+  --color-gray-500:  #94a3b8;
+  --color-gray-600:  #cbd5e1;
+  --color-gray-700:  #e2e8f0;
+  --color-gray-800:  #f1f5f9;
+  --color-gray-900:  #f8fafc;
+
+  --color-green-50:  #052e16;
+  --color-green-100: #14532d;
+  --color-green-600: #4ade80;
+  --color-green-700: #86efac;
+
+  --color-red-50:    #2c0a0a;
+  --color-red-100:   #450a0a;
+  --color-red-200:   #7f1d1d;
+  --color-red-400:   #f87171;
+  --color-red-500:   #ef4444;
+  --color-red-600:   #f87171;
+  --color-red-700:   #fca5a5;
+
+  --color-amber-50:  #2d1b00;
+  --color-amber-100: #451f00;
+  --color-amber-600: #fbbf24;
+
+  --color-blue-50:   #0c1a2e;
+  --color-blue-100:  #1e3a5f;
+  --color-blue-600:  #60a5fa;
+
+  --color-orange-400: #fb923c;
+}
+
+/* ─── Sepia Theme ────────────────────────────────────────── */
+html.theme-sepia {
+  --color-sebastian-bg:        #f0e8d5;
+  --color-sebastian-navy:      #5c3d2e;
+  --color-sebastian-dark:      #3d2214;
+  --color-sebastian-ivory:     #fdf8f0;
+  --color-sebastian-gray:      #7c5c4a;
+  --color-sebastian-lightgray: #a68970;
+
+  --color-white:     #fdfaf2;
+  --color-gray-50:   #f7f0e4;
+  --color-gray-100:  #ede4d4;
+  --color-gray-200:  #e0d4c0;
+  --color-gray-300:  #c8b89e;
+  --color-gray-400:  #a89278;
+  --color-gray-500:  #8c7860;
+  --color-gray-600:  #735f4c;
+  --color-gray-700:  #5a4838;
+  --color-gray-800:  #3d2b1f;
+  --color-gray-900:  #2a1a10;
+}

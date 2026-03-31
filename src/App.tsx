@@ -14,10 +14,16 @@ import WeeklyReport from './pages/WeeklyReport';
 import Settings from './pages/Settings';
 import { getSetting, SETTING_KEYS } from './lib/settings';
 import { selectDb } from './lib/db';
+import { loadAndApplyTheme } from './lib/theme';
 
 function AppRoutes() {
   const navigate = useNavigate();
   const lastReminderRef = useRef('');
+
+  // テーマ初期適用
+  useEffect(() => {
+    loadAndApplyTheme().catch(console.warn);
+  }, []);
 
   useEffect(() => {
     const appWindow = getCurrentWindow();

@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, PenLine, ListTodo, Calendar,
-  FileText, BookOpen, Settings,
+  FileText, BookOpen, Settings, Sun, Moon, Sunset,
 } from 'lucide-react';
+import { type Theme, loadAndApplyTheme, saveTheme } from '../../lib/theme';
 
 const NAV_GROUPS = [
   {
@@ -28,7 +29,24 @@ const NAV_GROUPS = [
   },
 ];
 
+const THEMES: { value: Theme; icon: React.ReactNode; label: string }[] = [
+  { value: 'light', icon: <Sun size={13} />, label: 'ライト' },
+  { value: 'dark',  icon: <Moon size={13} />, label: 'ダーク' },
+  { value: 'sepia', icon: <Sunset size={13} />, label: 'セピア' },
+];
+
 export function Sidebar() {
+  const [theme, setTheme] = useState<Theme>('light');
+
+  useEffect(() => {
+    loadAndApplyTheme().then(setTheme).catch(console.warn);
+  }, []);
+
+  const handleTheme = async (t: Theme) => {
+    setTheme(t);
+    await saveTheme(t);
+  };
+
   return (
     <aside className="w-56 bg-sebastian-navy text-sebastian-ivory h-screen flex flex-col shadow-lg flex-shrink-0">
       {/* ロゴ */}
@@ -71,7 +89,28 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="p-3 text-xs text-sebastian-ivory/30 text-center border-t border-sebastian-dark">
+      {/* テーマ切り替え */}
+      <div className="px-3 pb-3 border-t border-sebastian-dark pt-3">
+        <div className="flex gap-1">
+          {THEMES.map(t => (
+            <button
+              key={t.value}
+              onClick={() => handleTheme(t.value)}
+              title={t.label}
+              className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs transition-colors ${
+                theme === t.value
+                  ? 'bg-white/15 text-sebastian-ivory'
+                  : 'text-sebastian-ivory/40 hover:text-sebastian-ivory/70 hover:bg-white/5'
+              }`}
+            >
+              {t.icon}
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-3 pb-3 text-xs text-sebastian-ivory/30 text-center">
         AI Work Supporter v0.1.0
       </div>
     </aside>

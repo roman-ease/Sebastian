@@ -89,6 +89,12 @@ pub fn run() {
             sql: "ALTER TABLE tasks ADD COLUMN archived INTEGER DEFAULT 0;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add_pinned_to_tasks",
+            sql: "ALTER TABLE tasks ADD COLUMN pinned INTEGER DEFAULT 0;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

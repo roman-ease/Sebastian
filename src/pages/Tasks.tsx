@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp, Pin, PinOff } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
 import { logTaskAction } from '../lib/taskLogs';
 import { TaskModal, type TaskFormData, type TaskStatus, type TaskPriority } from '../components/TaskModal';
@@ -14,6 +14,7 @@ interface Task {
   due_date: string | null;
   category: string | null;
   archived: number;
+  pinned: number;
   created_at: string;
   updated_at: string;
 }
@@ -62,10 +63,10 @@ export default function Tasks() {
   const loadTasks = async () => {
     const [active, archived] = await Promise.all([
       selectDb<Task>(
-        'SELECT id, title, description, status, priority, due_date, category, archived, created_at, updated_at FROM tasks WHERE archived = 0 ORDER BY created_at DESC'
+        'SELECT id, title, description, status, priority, due_date, category, archived, pinned, created_at, updated_at FROM tasks WHERE archived = 0 ORDER BY pinned DESC, created_at DESC'
       ),
       selectDb<Task>(
-        'SELECT id, title, description, status, priority, due_date, category, archived, created_at, updated_at FROM tasks WHERE archived = 1 ORDER BY updated_at DESC'
+        'SELECT id, title, description, status, priority, due_date, category, archived, pinned, created_at, updated_at FROM tasks WHERE archived = 1 ORDER BY updated_at DESC'
       ),
     ]);
     setTasks(active);
@@ -141,6 +142,25 @@ export default function Tasks() {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setErrorMsg(`ステータス更新に失敗しました: ${msg}`);
+    }
+  };
+
+  const handleTogglePin = async (task: Task) => {
+    const newPinned = task.pinned ? 0 : 1;
+    try {
+      await executeDb(
+        'UPDATE tasks SET pinned=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        [newPinned, task.id]
+      );
+      await logTaskAction({
+        taskId: task.id,
+        actionType: newPinned ? 'pin' : 'unpin',
+        actorType: 'user',
+      });
+      loadTasks();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`ピン留め操作に失敗しました: ${msg}`);
     }
   };
 
@@ -298,6 +318,19 @@ export default function Tasks() {
 
                 {/* 優先度・操作ボタン */}
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* ピン留めボタン：ピン済みは常時表示 */}
+                  <button
+                    onClick={() => handleTogglePin(task)}
+                    className={`p-1 rounded transition-colors ${
+                      task.pinned
+                        ? 'text-sebastian-navy'
+                        : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-sebastian-navy'
+                    }`}
+                    title={task.pinned ? 'ピン留め解除' : 'ピン留め'}
+                  >
+                    {task.pinned ? <Pin size={14} /> : <PinOff size={14} />}
+                  </button>
+
                   {PRIORITY_BADGE[task.priority]}
 
                   {archivingId === task.id ? (

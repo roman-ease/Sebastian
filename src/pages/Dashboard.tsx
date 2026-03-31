@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { selectDb } from '../lib/db';
 import { getSetting, SETTING_KEYS } from '../lib/settings';
-import { ArrowRight, FileText } from 'lucide-react';
+import { ArrowRight, FileText, Pin } from 'lucide-react';
 import { MorningBriefingModal } from '../components/MorningBriefingModal';
 
 interface TaskSummary {
@@ -15,11 +15,29 @@ interface TaskSummary {
   due_date: string | null;
 }
 
+interface CategorySummary {
+  category: string;
+  total: number;
+  done_count: number;
+}
+
+const PRIORITY_COLOR: Record<string, string> = {
+  high: 'bg-red-50 text-red-600',
+  medium: 'bg-blue-50 text-blue-600',
+  low: 'bg-gray-100 text-gray-500',
+  none: 'bg-gray-50 text-gray-400',
+};
+const PRIORITY_LABEL: Record<string, string> = {
+  high: '高', medium: '中', low: '低', none: '',
+};
+
 export default function Dashboard() {
   const [todoCount, setTodoCount] = useState(0);
   const [memoLength, setMemoLength] = useState<number | null>(null);
   const [todayTasks, setTodayTasks] = useState<TaskSummary[]>([]);
   const [highPriorityTasks, setHighPriorityTasks] = useState<TaskSummary[]>([]);
+  const [pinnedTasks, setPinnedTasks] = useState<TaskSummary[]>([]);
+  const [categorySummary, setCategorySummary] = useState<CategorySummary[]>([]);
   const [reportExists, setReportExists] = useState(false);
   const [showBriefing, setShowBriefing] = useState(false);
 
@@ -29,24 +47,38 @@ export default function Dashboard() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const [countResult, memoResult, todayTaskResult, highResult, reportResult] = await Promise.all([
+        const [countResult, memoResult, todayTaskResult, highResult, reportResult, pinnedResult, categoryResult] = await Promise.all([
           selectDb<{ count: number }>(
-            "SELECT COUNT(*) as count FROM tasks WHERE status != 'done'"
+            "SELECT COUNT(*) as count FROM tasks WHERE status != 'done' AND archived = 0"
           ),
           selectDb<{ content: string }>(
             'SELECT content FROM daily_memos WHERE date = ?',
             [today]
           ),
           selectDb<TaskSummary>(
-            "SELECT id, title, status, priority, due_date FROM tasks WHERE due_date = ? AND status != 'done' ORDER BY priority DESC",
+            "SELECT id, title, status, priority, due_date FROM tasks WHERE due_date = ? AND status != 'done' AND archived = 0 ORDER BY priority DESC",
             [today]
           ),
           selectDb<TaskSummary>(
-            "SELECT id, title, status, priority, due_date FROM tasks WHERE priority = 'high' AND status != 'done' ORDER BY created_at DESC LIMIT 5",
+            "SELECT id, title, status, priority, due_date FROM tasks WHERE priority = 'high' AND status != 'done' AND archived = 0 ORDER BY created_at DESC LIMIT 5",
           ),
           selectDb<{ id: number }>(
             'SELECT id FROM reports_daily WHERE date = ?',
             [today]
+          ),
+          selectDb<TaskSummary>(
+            "SELECT id, title, status, priority, due_date FROM tasks WHERE pinned = 1 AND archived = 0 AND status != 'done' ORDER BY priority DESC, due_date ASC"
+          ),
+          selectDb<CategorySummary>(
+            `SELECT
+               COALESCE(category, '未分類') as category,
+               COUNT(*) as total,
+               SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done_count
+             FROM tasks
+             WHERE archived = 0
+             GROUP BY category
+             ORDER BY total DESC
+             LIMIT 8`
           ),
         ]);
 
@@ -55,6 +87,8 @@ export default function Dashboard() {
         setTodayTasks(todayTaskResult);
         setHighPriorityTasks(highResult);
         setReportExists(reportResult.length > 0);
+        setPinnedTasks(pinnedResult);
+        setCategorySummary(categoryResult);
       } catch (e) {
         console.error('Failed to load stats', e);
       }
@@ -62,34 +96,17 @@ export default function Dashboard() {
     loadStats();
   }, [today]);
 
-  // 朝のブリーフィング: 今日まだ表示していなければ表示
   useEffect(() => {
     async function checkBriefing() {
       try {
         const lastDate = await getSetting(SETTING_KEYS.LAST_BRIEFING_DATE);
-        if (lastDate !== today) {
-          setShowBriefing(true);
-        }
+        if (lastDate !== today) setShowBriefing(true);
       } catch (e) {
         console.error('ブリーフィングチェック失敗:', e);
       }
     }
     checkBriefing();
   }, [today]);
-
-  const PRIORITY_COLOR: Record<string, string> = {
-    high: 'bg-red-50 text-red-600',
-    medium: 'bg-blue-50 text-blue-600',
-    low: 'bg-gray-100 text-gray-500',
-    none: 'bg-gray-50 text-gray-400',
-  };
-
-  const PRIORITY_LABEL: Record<string, string> = {
-    high: '高',
-    medium: '中',
-    low: '低',
-    none: '',
-  };
 
   const memoUnorganized = (memoLength ?? 0) > 0 && !reportExists;
 
@@ -146,7 +163,7 @@ export default function Dashboard() {
           }`}
         >
           <h3 className="text-gray-500 text-sm font-medium">本日の日報</h3>
-          <p className={`text-xl font-medium mt-2 flex items-center gap-2 ${reportExists ? 'text-green-600' : 'text-sebastian-gray'}`}>
+          <p className={`text-xl font-medium mt-2 ${reportExists ? 'text-green-600' : 'text-sebastian-gray'}`}>
             {reportExists ? '承認済' : '未作成'}
           </p>
           <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
@@ -156,7 +173,35 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      {/* 今日の予定・ブリーフィング */}
+      {/* 本日の注力（ピン留め） */}
+      {pinnedTasks.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 className="text-sm font-medium text-sebastian-navy mb-3 flex items-center gap-2">
+            <Pin size={14} className="text-sebastian-navy" />
+            本日の注力
+          </h3>
+          <ul className="space-y-2">
+            {pinnedTasks.map(t => (
+              <li key={t.id} className="flex items-center gap-2 text-sm text-gray-700">
+                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
+                  {PRIORITY_LABEL[t.priority] || '—'}
+                </span>
+                <span className="flex-1">{t.title}</span>
+                {t.due_date && (
+                  <span className="text-xs text-gray-400 flex-shrink-0">
+                    {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-gray-400 mt-3">
+            タスク一覧のピンアイコンで管理できます
+          </p>
+        </div>
+      )}
+
+      {/* 今日が期日 / 優先度高 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
           <h3 className="text-sm font-medium text-sebastian-navy mb-3 flex items-center justify-between">
@@ -207,6 +252,33 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* カテゴリ別稼働サマリ */}
+      {categorySummary.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 className="text-sm font-medium text-sebastian-navy mb-4">カテゴリ別サマリ</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {categorySummary.map(c => {
+              const pct = c.total > 0 ? Math.round((c.done_count / c.total) * 100) : 0;
+              return (
+                <div key={c.category} className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs font-medium text-gray-600 truncate mb-2">{c.category}</p>
+                  <div className="flex items-end justify-between mb-1.5">
+                    <span className="text-xs text-gray-400">{c.done_count}/{c.total}</span>
+                    <span className="text-xs font-medium text-sebastian-navy">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-sebastian-navy rounded-full transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 1日を締めるCTA */}
       {!reportExists && (
