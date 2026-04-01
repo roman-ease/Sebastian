@@ -31,3 +31,6 @@ Report/
 
 # Claude Code session data
 .claude/
+
+# Internal handoff / transfer documents
+HANDOFF.md
