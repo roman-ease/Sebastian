@@ -11,13 +11,19 @@ export async function getDb(): Promise<Database> {
 }
 
 export async function executeDb(query: string, bindValues?: unknown[]): Promise<any> {
-  if (isDemoMode()) return { lastInsertId: 0, changes: 0 };
+  // デモモードでも settings テーブルへの書き込みは通す
+  if (isDemoMode() && !query.toLowerCase().includes('settings')) {
+    return { lastInsertId: 0, changes: 0 };
+  }
   const db = await getDb();
   return await db.execute(query, bindValues);
 }
 
 export async function selectDb<T>(query: string, bindValues?: unknown[]): Promise<T[]> {
-  if (isDemoMode()) return selectDemo<T>(query, bindValues ?? []);
+  // デモモードでも settings テーブルの読み込みは実DBから取得
+  if (isDemoMode() && !query.toLowerCase().includes('from settings')) {
+    return selectDemo<T>(query, bindValues ?? []);
+  }
   const db = await getDb();
   return await db.select<T[]>(query, bindValues);
 }
