@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp, Pin, PinOff } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
 import { logTaskAction } from '../lib/taskLogs';
 import { TaskModal, type TaskFormData, type TaskStatus, type TaskPriority } from '../components/TaskModal';
+import { OrnateCard, PageHeader } from '../components/ClassicUI';
 
 interface Task {
   id: number;
@@ -231,19 +232,17 @@ export default function Tasks() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-center justify-between mb-2">
-        <div>
-          <h2 className="text-sm font-medium text-sebastian-gray mb-1">TASKS</h2>
-          <h1 className="text-2xl font-serif text-sebastian-navy">タスク一覧</h1>
-        </div>
+      <div className="flex items-start justify-between">
+        <PageHeader label="TASKS" title="タスク一覧" />
         <button
           onClick={() => { setEditingTask(null); setModalMode('create'); }}
-          className="bg-sebastian-navy text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-sebastian-dark transition-colors text-sm"
+          className="mt-1 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-serif transition-colors shrink-0"
+          style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}
         >
-          <Plus size={16} />
+          <Plus size={15} />
           タスクを追加
         </button>
-      </header>
+      </div>
 
       {/* エラー表示 */}
       {errorMsg && (
@@ -255,20 +254,20 @@ export default function Tasks() {
       )}
 
       {/* フィルタタブ */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-sebastian-border/30 rounded-xl p-1 w-fit">
         {FILTER_LABELS.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setFilter(key)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-4 py-1.5 rounded-lg text-sm font-serif transition-colors ${
               filter === key
                 ? 'bg-white text-sebastian-navy shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                : 'text-sebastian-lightgray hover:text-sebastian-gray'
             }`}
           >
             {label}
             {key !== 'all' && (
-              <span className="ml-1.5 text-xs text-gray-400">
+              <span className="ml-1.5 text-xs text-sebastian-lightgray/70">
                 {tasks.filter(t => t.status === key).length}
               </span>
             )}
@@ -277,13 +276,13 @@ export default function Tasks() {
       </div>
 
       {/* アクティブなタスクリスト */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+      <OrnateCard>
         {filteredTasks.length === 0 ? (
-          <div className="text-center text-gray-400 py-12 text-sm">タスクがありません</div>
+          <div className="text-center text-sebastian-lightgray py-12 text-sm italic font-serif">タスクがありません</div>
         ) : (
-          <ul className="divide-y divide-gray-50">
+          <ul className="divide-y divide-sebastian-border/40">
             {filteredTasks.map(task => (
-              <li key={task.id} className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50/50 transition-colors group">
+              <li key={task.id} className="flex items-center gap-3 px-5 py-4 hover:bg-sebastian-parchment/30 transition-colors group">
                 {/* ステータスアイコン（クリックで完了/未着手トグル） */}
                 <button
                   onClick={() => handleToggleStatus(task)}
@@ -297,21 +296,21 @@ export default function Tasks() {
                 <div className="flex-1 min-w-0">
                   <button
                     onClick={() => openEdit(task)}
-                    className={`block text-sm text-left w-full hover:underline underline-offset-2 ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800 hover:text-sebastian-navy'}`}
+                    className={`block text-sm text-left w-full font-serif hover:underline underline-offset-2 ${task.status === 'done' ? 'line-through text-sebastian-lightgray' : 'text-sebastian-text hover:text-sebastian-navy'}`}
                   >
                     {task.title}
                   </button>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {task.category && (
-                      <span className="text-xs text-sebastian-lightgray">{task.category}</span>
+                      <span className="text-xs text-sebastian-lightgray font-serif">{task.category}</span>
                     )}
                     {task.due_date && (
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-sebastian-lightgray/80 font-serif">
                         期日: {format(new Date(task.due_date + 'T00:00:00'), 'M/d')}
                       </span>
                     )}
                     {task.description && (
-                      <span className="text-xs text-gray-300 truncate max-w-[200px]">{task.description}</span>
+                      <span className="text-xs text-sebastian-lightgray/60 truncate max-w-[200px] font-serif">{task.description}</span>
                     )}
                   </div>
                 </div>
@@ -323,8 +322,8 @@ export default function Tasks() {
                     onClick={() => handleTogglePin(task)}
                     className={`p-1 rounded transition-colors ${
                       task.pinned
-                        ? 'text-sebastian-navy'
-                        : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-sebastian-navy'
+                        ? 'text-sebastian-gold-dark'
+                        : 'text-sebastian-lightgray/40 opacity-0 group-hover:opacity-100 hover:text-sebastian-gold-dark'
                     }`}
                     title={task.pinned ? 'ピン留め解除' : 'ピン留め'}
                   >
@@ -369,14 +368,14 @@ export default function Tasks() {
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => { setArchivingId(task.id); setDeletingId(null); }}
-                        className="p-1.5 text-gray-400 hover:text-sebastian-navy hover:bg-gray-100 rounded-lg transition-colors"
+                        className="p-1.5 text-sebastian-lightgray/60 hover:text-sebastian-navy hover:bg-sebastian-parchment rounded-lg transition-colors"
                         title="アーカイブ"
                       >
                         <Archive size={14} />
                       </button>
                       <button
                         onClick={() => { setDeletingId(task.id); setArchivingId(null); }}
-                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-1.5 text-sebastian-lightgray/60 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         title="削除"
                       >
                         <Trash2 size={14} />
@@ -388,14 +387,14 @@ export default function Tasks() {
             ))}
           </ul>
         )}
-      </div>
+      </OrnateCard>
 
       {/* アーカイブ済みセクション */}
       {archivedTasks.length > 0 && (
         <div>
           <button
             onClick={() => setShowArchived(v => !v)}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-sebastian-gray transition-colors w-full py-1"
+            className="flex items-center gap-2 text-sm text-sebastian-lightgray hover:text-sebastian-gray transition-colors w-full py-1 font-serif"
           >
             {showArchived ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
             <Archive size={14} />
@@ -403,22 +402,22 @@ export default function Tasks() {
           </button>
 
           {showArchived && (
-            <div className="mt-3 bg-gray-50 rounded-xl border border-gray-100">
-              <ul className="divide-y divide-gray-100">
+            <div className="mt-3 bg-sebastian-parchment/50 rounded-xl border border-sebastian-border/50">
+              <ul className="divide-y divide-sebastian-border/30">
                 {archivedTasks.map(task => (
                   <li key={task.id} className="flex items-center gap-3 px-5 py-3 group">
-                    <Archive size={16} className="text-gray-300 flex-shrink-0" />
+                    <Archive size={16} className="text-sebastian-lightgray/50 flex-shrink-0" />
 
                     <div className="flex-1 min-w-0">
-                      <span className="block text-sm text-gray-400 line-through">
+                      <span className="block text-sm text-sebastian-lightgray line-through font-serif">
                         {task.title}
                       </span>
                       <div className="flex items-center gap-2 mt-0.5">
                         {task.category && (
-                          <span className="text-xs text-gray-300">{task.category}</span>
+                          <span className="text-xs text-sebastian-lightgray/70 font-serif">{task.category}</span>
                         )}
                         {task.due_date && (
-                          <span className="text-xs text-gray-300">
+                          <span className="text-xs text-sebastian-lightgray/70 font-serif">
                             期日: {format(new Date(task.due_date + 'T00:00:00'), 'M/d')}
                           </span>
                         )}
@@ -428,7 +427,7 @@ export default function Tasks() {
                     <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleRestore(task)}
-                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-sebastian-navy hover:bg-white px-2 py-1 rounded-lg transition-colors"
+                        className="flex items-center gap-1 text-xs text-sebastian-lightgray hover:text-sebastian-navy hover:bg-white px-2 py-1 rounded-lg transition-colors font-serif"
                         title="復元"
                       >
                         <ArchiveRestore size={13} />

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { invoke } from '@tauri-apps/api/core';
 import { Sparkles, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
+import { OrnateCard, CardHeading } from '../components/ClassicUI';
 import { generateWeeklyReport, type TaskLogEntry, type TaskEntry } from '../lib/ai';
 import { getSetting, SETTING_KEYS } from '../lib/settings';
 
@@ -131,34 +132,39 @@ export default function WeeklyReport() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-medium text-sebastian-gray mb-1">WEEKLY REPORT</h2>
-          <h1 className="text-2xl font-serif text-sebastian-navy">週報</h1>
-        </div>
+      <div className="flex items-start justify-between mb-6">
+        <header>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-[11px] font-display tracking-[0.22em] text-sebastian-gray uppercase shrink-0">Weekly Report</span>
+            <div className="flex-1 h-px bg-sebastian-gold/20" />
+            <span className="text-sebastian-gold/45 text-[10px] shrink-0">◆</span>
+            <div className="w-10 h-px bg-sebastian-gold/20" />
+          </div>
+          <h1 className="text-3xl font-serif text-sebastian-navy">週報</h1>
+        </header>
         {/* 週選択 */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mt-1">
           <button
             onClick={() => setSelectedWeekStart(w => subWeeks(w, 1))}
-            className="p-1.5 text-gray-400 hover:text-sebastian-navy hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-1.5 text-sebastian-lightgray hover:text-sebastian-navy hover:bg-sebastian-parchment rounded-lg transition-colors"
           >
             <ChevronLeft size={18} />
           </button>
-          <span className="text-sm text-gray-600 font-medium min-w-[200px] text-center">
+          <span className="text-sm text-sebastian-gray font-serif min-w-[200px] text-center">
             {format(selectedWeekStart, 'yyyy年M月d日', { locale: ja })} 〜 {format(weekEnd, 'M月d日', { locale: ja })}
           </span>
           <button
             onClick={() => setSelectedWeekStart(w => addWeeks(w, 1))}
-            className="p-1.5 text-gray-400 hover:text-sebastian-navy hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-1.5 text-sebastian-lightgray hover:text-sebastian-navy hover:bg-sebastian-parchment rounded-lg transition-colors"
           >
             <ChevronRight size={18} />
           </button>
         </div>
-      </header>
+      </div>
 
       {/* 日報カバレッジ */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-        <p className="text-sm text-gray-500 mb-3">今週の日報: {dailyCount} / 5 日分</p>
+      <OrnateCard className="p-4">
+        <CardHeading>今週の日報: {dailyCount} / 5 日分</CardHeading>
         <div className="flex gap-1.5">
           {weekDays.slice(0, 5).map((d, i) => {
             const dayName = ['月', '火', '水', '木', '金'][i];
@@ -166,10 +172,10 @@ export default function WeeklyReport() {
             return (
               <div
                 key={d}
-                className={`flex-1 rounded-lg p-2 text-center text-xs ${
+                className={`flex-1 rounded-lg p-2 text-center text-xs font-serif ${
                   exists
                     ? 'bg-green-50 text-green-700 border border-green-100'
-                    : 'bg-gray-50 text-gray-400 border border-gray-100'
+                    : 'bg-sebastian-parchment/60 text-sebastian-lightgray border border-sebastian-border/40'
                 }`}
               >
                 <div className="font-medium">{dayName}</div>
@@ -178,7 +184,7 @@ export default function WeeklyReport() {
             );
           })}
         </div>
-      </div>
+      </OrnateCard>
 
       {errorMsg && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
@@ -203,44 +209,47 @@ export default function WeeklyReport() {
               再編集
             </button>
           </div>
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-            <pre className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed font-sans">
+          <OrnateCard className="p-6">
+            <pre className="whitespace-pre-wrap text-sm text-sebastian-text leading-relaxed font-sans">
               {savedContent}
             </pre>
-          </div>
+          </OrnateCard>
         </div>
       )}
 
       {/* 未生成 */}
       {pageState === 'idle' && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-10 text-center space-y-5">
-          <div className="w-14 h-14 rounded-full bg-sebastian-navy/5 flex items-center justify-center mx-auto">
-            <Sparkles size={24} className="text-sebastian-navy" />
+        <OrnateCard className="p-10 text-center">
+          <div className="space-y-5">
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto" style={{ backgroundColor: 'rgba(201,164,86,0.1)', border: '1px solid rgba(201,164,86,0.3)' }}>
+              <Sparkles size={24} style={{ color: '#c9a456' }} />
+            </div>
+            <div>
+              <p className="font-serif text-sebastian-navy text-xl">今週の内容を整理しますか？</p>
+              <p className="text-sm text-sebastian-gray mt-2 font-serif">
+                今週の日報とタスク変更から、セバスチャンが週報案を整えます。
+              </p>
+            </div>
+            <button
+              onClick={handleGenerate}
+              className="px-8 py-2.5 rounded-lg text-sm font-serif transition-colors"
+              style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}
+            >
+              週報案を生成する
+            </button>
+            <p className="text-xs text-sebastian-lightgray font-serif">{savePathNote}</p>
           </div>
-          <div>
-            <p className="font-serif text-sebastian-navy text-xl">今週の内容を整理しますか？</p>
-            <p className="text-sm text-gray-500 mt-2">
-              今週の日報とタスク変更から、セバスチャンが週報案を整えます。
-            </p>
-          </div>
-          <button
-            onClick={handleGenerate}
-            className="bg-sebastian-navy text-white px-8 py-2.5 rounded-lg hover:bg-sebastian-dark transition-colors text-sm font-medium"
-          >
-            週報案を生成する
-          </button>
-          <p className="text-xs text-gray-400">{savePathNote}</p>
-        </div>
+        </OrnateCard>
       )}
 
       {/* 生成中 */}
       {pageState === 'generating' && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-10 text-center">
-          <div className="flex items-center justify-center gap-2 text-sebastian-gray">
-            <Sparkles size={18} className="animate-pulse" />
+        <OrnateCard className="p-10 text-center">
+          <div className="flex items-center justify-center gap-2 text-sebastian-gray font-serif">
+            <Sparkles size={18} className="animate-pulse" style={{ color: '#c9a456' }} />
             <span className="text-sm">セバスチャンが週報案を整えています...</span>
           </div>
-        </div>
+        </OrnateCard>
       )}
 
       {/* ドラフト */}
@@ -259,7 +268,7 @@ export default function WeeklyReport() {
           </div>
 
           <textarea
-            className="w-full h-[480px] bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-700 leading-relaxed outline-none focus:border-sebastian-lightgray resize-none transition-colors font-mono"
+            className="w-full h-[480px] bg-white border border-sebastian-border rounded-xl p-4 text-sm text-sebastian-text leading-relaxed outline-none focus:border-sebastian-gold/50 resize-none transition-colors font-mono"
             value={draft}
             onChange={e => setDraft(e.target.value)}
             disabled={pageState === 'saving'}
@@ -269,20 +278,21 @@ export default function WeeklyReport() {
             <button
               onClick={() => handleApprove(draft)}
               disabled={pageState === 'saving'}
-              className="flex-1 bg-sebastian-navy text-white rounded-lg py-2.5 font-medium hover:bg-sebastian-dark transition-colors disabled:opacity-60 text-sm"
+              className="flex-1 rounded-lg py-2.5 font-serif transition-colors disabled:opacity-60 text-sm"
+              style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}
             >
               {pageState === 'saving' ? '保存中...' : '承認・保存する'}
             </button>
             <button
               onClick={() => { setPageState('idle'); setDraft(''); }}
               disabled={pageState === 'saving'}
-              className="px-5 bg-gray-100 text-gray-600 rounded-lg py-2.5 font-medium hover:bg-gray-200 transition-colors disabled:opacity-60 text-sm"
+              className="px-5 bg-sebastian-border/30 text-sebastian-gray rounded-lg py-2.5 font-serif hover:bg-sebastian-border/50 transition-colors disabled:opacity-60 text-sm"
             >
               やり直す
             </button>
           </div>
 
-          <p className="text-xs text-gray-400 text-center">{savePathNote}</p>
+          <p className="text-xs text-sebastian-lightgray text-center font-serif">{savePathNote}</p>
         </div>
       )}
     </div>

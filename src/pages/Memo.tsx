@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { AlertCircle } from 'lucide-react';
 import { executeDb, selectDb } from '../lib/db';
+import { PageHeader } from '../components/ClassicUI';
 
 export default function Memo() {
   const [content, setContent] = useState('');
@@ -73,11 +74,11 @@ export default function Memo() {
   };
 
   const statusColor: Record<typeof saveStatus, string> = {
-    idle: 'text-gray-300',
-    typing: 'text-gray-400',
-    saving: 'text-gray-400',
-    saved: 'text-green-500',
-    error: 'text-red-400',
+    idle: 'text-sebastian-lightgray/50',
+    typing: 'text-sebastian-lightgray',
+    saving: 'text-sebastian-lightgray',
+    saved: 'text-green-600',
+    error: 'text-red-500',
   };
 
   const charCount = content.length;
@@ -85,22 +86,26 @@ export default function Memo() {
 
   return (
     <div className="h-full flex flex-col" style={{ height: 'calc(100vh - 6rem)' }}>
-      <header className="mb-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-medium text-sebastian-gray mb-1">MEMO</h2>
-          <h1 className="text-2xl font-serif text-sebastian-navy">本日の記録（<span className="font-sans">{today}</span>）</h1>
-        </div>
-        <div className="text-right">
-          <div className={`text-sm ${statusColor[saveStatus]}`}>{statusText[saveStatus]}</div>
+      <div className="flex items-start justify-between mb-4">
+        <PageHeader
+          label="MEMO"
+          title={<>本日の記録（<span className="font-sans text-2xl">{today}</span>）</>}
+        />
+        <div className="text-right mt-1 shrink-0">
+          <div className={`text-sm font-serif ${statusColor[saveStatus]}`}>{statusText[saveStatus]}</div>
           {charCount > 0 && (
-            <div className="text-xs text-gray-300 mt-0.5">{charCount} 文字</div>
+            <div className="text-xs text-sebastian-lightgray/60 mt-0.5 font-serif">{charCount} 文字</div>
           )}
         </div>
-      </header>
+      </div>
 
-      <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 p-4 min-h-0">
+      <div className="relative flex-1 bg-white rounded-xl shadow-sm border border-sebastian-border p-4 min-h-0">
+        <span className="absolute top-2.5 left-2.5 w-4 h-4 border-t border-l border-sebastian-gold/30 pointer-events-none rounded-tl-sm" />
+        <span className="absolute top-2.5 right-2.5 w-4 h-4 border-t border-r border-sebastian-gold/30 pointer-events-none rounded-tr-sm" />
+        <span className="absolute bottom-2.5 left-2.5 w-4 h-4 border-b border-l border-sebastian-gold/30 pointer-events-none rounded-bl-sm" />
+        <span className="absolute bottom-2.5 right-2.5 w-4 h-4 border-b border-r border-sebastian-gold/30 pointer-events-none rounded-br-sm" />
         <textarea
-          className="w-full h-full resize-none outline-none text-gray-700 leading-relaxed bg-transparent text-sm"
+          className="w-full h-full resize-none outline-none text-sebastian-text leading-relaxed bg-transparent text-sm font-serif"
           placeholder={`業務の断片、思いついたことなどを自由に入力してください。\nセバスチャンが後で整理します。\n\n例:\n・〇〇さんからTeamsで問い合わせ → 対応済\n・△△の件、週末までに確認が必要\n・研修資料の差し替えを依頼された`}
           value={content}
           onChange={handleChange}

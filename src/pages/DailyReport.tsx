@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { invoke } from '@tauri-apps/api/core';
 import { Sparkles, CheckCircle, AlertCircle, Pencil } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
+import { PageHeader, OrnateCard, CardHeading } from '../components/ClassicUI';
 import { generateDailyReport, extractTaskCandidates, type TaskLogEntry, type TaskEntry, type TaskCandidate } from '../lib/ai';
 import { getSetting, SETTING_KEYS } from '../lib/settings';
 import { TaskCandidatesPanel } from '../components/TaskCandidatesPanel';
@@ -121,10 +122,7 @@ export default function DailyReport() {
 
   return (
     <div className="space-y-6">
-      <header className="mb-2">
-        <h2 className="text-sm font-medium text-sebastian-gray mb-1">DAILY REPORT</h2>
-        <h1 className="text-2xl font-serif text-sebastian-navy">日報 — <span className="font-sans">{today}</span></h1>
-      </header>
+      <PageHeader label="DAILY REPORT" title={<>日報 — <span className="font-sans text-2xl">{today}</span></>} />
 
       {errorMsg && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
@@ -149,30 +147,31 @@ export default function DailyReport() {
               再編集
             </button>
           </div>
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-            <pre className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed font-sans">
+          <OrnateCard className="p-6">
+            <pre className="whitespace-pre-wrap text-sm text-sebastian-text leading-relaxed font-sans">
               {savedContent}
             </pre>
-          </div>
+          </OrnateCard>
 
           {/* タスク候補抽出セクション */}
-          <div className="border-t border-gray-100 pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-sebastian-gray font-medium">メモからタスクを追加しますか？</p>
-              {candidateState === 'idle' && (
+          <OrnateCard className="p-5">
+            <CardHeading
+              action={candidateState === 'idle' ? (
                 <button
                   onClick={handleExtractCandidates}
-                  className="flex items-center gap-1.5 text-sm bg-white border border-gray-200 text-gray-600 px-4 py-1.5 rounded-lg hover:border-sebastian-lightgray hover:text-sebastian-navy transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-sebastian-lightgray hover:text-sebastian-gold transition-colors font-serif"
                 >
-                  <Sparkles size={14} />
+                  <Sparkles size={12} />
                   タスク候補を抽出する
                 </button>
-              )}
-            </div>
+              ) : undefined}
+            >
+              メモからタスクを追加しますか？
+            </CardHeading>
 
             {candidateState === 'extracting' && (
-              <div className="flex items-center gap-2 text-sm text-sebastian-gray bg-gray-50 rounded-xl p-4">
-                <Sparkles size={15} className="animate-pulse" />
+              <div className="flex items-center gap-2 text-sm text-sebastian-gray bg-sebastian-parchment/50 rounded-xl p-4 font-serif">
+                <Sparkles size={15} className="animate-pulse text-sebastian-gold" />
                 セバスチャンがメモからタスク候補を抽出しています...
               </div>
             )}
@@ -188,46 +187,49 @@ export default function DailyReport() {
             {candidateState === 'done' && (
               <button
                 onClick={handleExtractCandidates}
-                className="text-xs text-gray-400 hover:text-sebastian-gray flex items-center gap-1 transition-colors"
+                className="text-xs text-sebastian-lightgray hover:text-sebastian-gray flex items-center gap-1 transition-colors font-serif"
               >
                 <Sparkles size={11} />
                 再度抽出する
               </button>
             )}
-          </div>
+          </OrnateCard>
         </div>
       )}
 
       {/* 未生成 */}
       {pageState === 'idle' && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-10 text-center space-y-5">
-          <div className="w-14 h-14 rounded-full bg-sebastian-navy/5 flex items-center justify-center mx-auto">
-            <Sparkles size={24} className="text-sebastian-navy" />
+        <OrnateCard className="p-10 text-center">
+          <div className="space-y-5">
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto" style={{ backgroundColor: 'rgba(201,164,86,0.1)', border: '1px solid rgba(201,164,86,0.3)' }}>
+              <Sparkles size={24} style={{ color: '#c9a456' }} />
+            </div>
+            <div>
+              <p className="font-serif text-sebastian-navy text-xl">本日の業務を締めますか？</p>
+              <p className="text-sm text-sebastian-gray mt-2 font-serif">
+                本日のメモとタスク変更から、セバスチャンが日報案を整えます。
+              </p>
+            </div>
+            <button
+              onClick={handleGenerate}
+              className="px-8 py-2.5 rounded-lg text-sm font-serif transition-colors"
+              style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}
+            >
+              日報案を生成する
+            </button>
+            <p className="text-xs text-sebastian-lightgray font-serif">{savePathNote}</p>
           </div>
-          <div>
-            <p className="font-serif text-sebastian-navy text-xl">本日の業務を締めますか？</p>
-            <p className="text-sm text-gray-500 mt-2">
-              本日のメモとタスク変更から、セバスチャンが日報案を整えます。
-            </p>
-          </div>
-          <button
-            onClick={handleGenerate}
-            className="bg-sebastian-navy text-white px-8 py-2.5 rounded-lg hover:bg-sebastian-dark transition-colors text-sm font-medium"
-          >
-            日報案を生成する
-          </button>
-          <p className="text-xs text-gray-400">{savePathNote}</p>
-        </div>
+        </OrnateCard>
       )}
 
       {/* 生成中 */}
       {pageState === 'generating' && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-10 text-center">
-          <div className="flex items-center justify-center gap-2 text-sebastian-gray">
-            <Sparkles size={18} className="animate-pulse" />
+        <OrnateCard className="p-10 text-center">
+          <div className="flex items-center justify-center gap-2 text-sebastian-gray font-serif">
+            <Sparkles size={18} className="animate-pulse" style={{ color: '#c9a456' }} />
             <span className="text-sm">セバスチャンが日報案を整えています...</span>
           </div>
-        </div>
+        </OrnateCard>
       )}
 
       {/* ドラフト編集・承認 */}
@@ -246,7 +248,7 @@ export default function DailyReport() {
           </div>
 
           <textarea
-            className="w-full h-96 bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-700 leading-relaxed outline-none focus:border-sebastian-lightgray resize-none transition-colors font-mono"
+            className="w-full h-96 bg-white border border-sebastian-border rounded-xl p-4 text-sm text-sebastian-text leading-relaxed outline-none focus:border-sebastian-gold/50 resize-none transition-colors font-mono"
             value={draft}
             onChange={e => setDraft(e.target.value)}
             disabled={pageState === 'saving'}
@@ -256,20 +258,21 @@ export default function DailyReport() {
             <button
               onClick={() => handleApprove(draft)}
               disabled={pageState === 'saving'}
-              className="flex-1 bg-sebastian-navy text-white rounded-lg py-2.5 font-medium hover:bg-sebastian-dark transition-colors disabled:opacity-60 text-sm"
+              className="flex-1 rounded-lg py-2.5 font-serif transition-colors disabled:opacity-60 text-sm"
+              style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}
             >
               {pageState === 'saving' ? '保存中...' : '承認・保存する'}
             </button>
             <button
               onClick={() => { setPageState('idle'); setDraft(''); }}
               disabled={pageState === 'saving'}
-              className="px-5 bg-gray-100 text-gray-600 rounded-lg py-2.5 font-medium hover:bg-gray-200 transition-colors disabled:opacity-60 text-sm"
+              className="px-5 bg-sebastian-border/30 text-sebastian-gray rounded-lg py-2.5 font-serif hover:bg-sebastian-border/50 transition-colors disabled:opacity-60 text-sm"
             >
               やり直す
             </button>
           </div>
 
-          <p className="text-xs text-gray-400 text-center">{savePathNote}</p>
+          <p className="text-xs text-sebastian-lightgray text-center font-serif">{savePathNote}</p>
         </div>
       )}
     </div>

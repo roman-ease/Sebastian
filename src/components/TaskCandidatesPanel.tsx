@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Sparkles, Plus, RefreshCw, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { executeDb, selectDb } from '../lib/db';
 import { logTaskAction } from '../lib/taskLogs';
 import { type TaskCandidate } from '../lib/ai';
+import { PRIORITY_COLOR, PRIORITY_LABEL } from '../lib/constants';
 
 interface Props {
   candidates: TaskCandidate[];
@@ -19,15 +20,7 @@ interface FullTask {
   category: string | null;
 }
 
-const PRIORITY_LABEL: Record<string, string> = {
-  high: '高', medium: '中', low: '低', none: 'なし',
-};
-const PRIORITY_COLOR: Record<string, string> = {
-  high: 'bg-red-50 text-red-600 border-red-100',
-  medium: 'bg-blue-50 text-blue-600 border-blue-100',
-  low: 'bg-gray-50 text-gray-500 border-gray-100',
-  none: 'bg-gray-50 text-gray-400 border-gray-100',
-};
+
 const FIELD_LABEL: Record<string, string> = {
   description: '詳細',
   priority: '優先度',

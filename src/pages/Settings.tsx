@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { FolderOpen, CheckCircle, AlertCircle, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Upload, Download, Clock } from 'lucide-react';
 import { getSetting, setSetting, SETTING_KEYS } from '../lib/settings';
+import { PageHeader, OrnateCard, CardHeading } from '../components/ClassicUI';
+import { registerShortcut } from '../lib/shortcut';
 import { checkOllamaConnection, checkGeminiConnection, type OllamaStatus } from '../lib/ai';
 import { pushSync, pullSync, getSyncFolderDbMtime } from '../lib/sync';
 import { format } from 'date-fns';
@@ -47,6 +49,8 @@ export default function Settings() {
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [syncFolderDbTime, setSyncFolderDbTime] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [shortcutStatus, setShortcutStatus] = useState<'idle' | 'ok' | 'error'>('idle');
+  const [shortcutError, setShortcutError] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
@@ -159,9 +163,20 @@ export default function Settings() {
       } catch { /* 開発モードではスキップ */ }
 
       if (form.globalShortcut) {
-        window.dispatchEvent(
-          new CustomEvent('sebastian:shortcut-changed', { detail: form.globalShortcut })
-        );
+        setShortcutStatus('idle');
+        setShortcutError('');
+        const ok = await registerShortcut(form.globalShortcut, async () => {
+          window.dispatchEvent(new CustomEvent('sebastian:open-memo'));
+        });
+        if (ok) {
+          window.dispatchEvent(
+            new CustomEvent('sebastian:shortcut-changed', { detail: form.globalShortcut })
+          );
+          setShortcutStatus('ok');
+        } else {
+          setShortcutStatus('error');
+          setShortcutError(`「${form.globalShortcut}」の登録に失敗しました。キーの形式を確認してください（例: Ctrl+Shift+N、Alt+F2）`);
+        }
       }
 
       setSaveStatus('saved');
@@ -212,18 +227,16 @@ export default function Settings() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <header className="mb-2">
-        <h2 className="text-sm font-medium text-sebastian-gray mb-1">SETTINGS</h2>
-        <h1 className="text-2xl font-serif text-sebastian-navy">設定</h1>
-      </header>
+      <PageHeader label="SETTINGS" title="設定" />
 
       {/* AI設定 */}
-      <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
-        <h2 className="text-sm font-semibold text-sebastian-navy">AI設定</h2>
+      <OrnateCard className="p-6">
+        <div className="space-y-5">
+        <CardHeading>AI設定</CardHeading>
 
         {/* プロバイダー選択 */}
         <div className="space-y-2">
-          <label className="block text-sm text-gray-500">AIプロバイダー</label>
+          <label className="block text-sm text-sebastian-gray font-serif">AIプロバイダー</label>
           <div className="flex gap-2">
             {([
               { value: 'gemini', label: 'Gemini API', sub: '無料・高速・推奨' },
@@ -235,14 +248,14 @@ export default function Settings() {
                 onClick={() => setForm(f => ({ ...f, aiProvider: opt.value }))}
                 className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition-colors ${
                   form.aiProvider === opt.value
-                    ? 'border-sebastian-navy bg-sebastian-navy/5'
-                    : 'border-gray-100 hover:border-gray-200'
+                    ? 'border-sebastian-gold/60 bg-sebastian-gold/5'
+                    : 'border-sebastian-border/50 hover:border-sebastian-border'
                 }`}
               >
-                <p className={`text-sm font-medium ${form.aiProvider === opt.value ? 'text-sebastian-navy' : 'text-gray-700'}`}>
+                <p className={`text-sm font-serif font-medium ${form.aiProvider === opt.value ? 'text-sebastian-navy' : 'text-sebastian-gray'}`}>
                   {opt.label}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5">{opt.sub}</p>
+                <p className="text-xs text-sebastian-lightgray mt-0.5 font-serif">{opt.sub}</p>
               </button>
             ))}
           </div>
@@ -252,35 +265,35 @@ export default function Settings() {
         {form.aiProvider === 'gemini' && (
           <div className="space-y-4 pt-1">
             <div className="space-y-2">
-              <label className="block text-sm text-gray-500">APIキー</label>
+              <label className="block text-sm text-sebastian-gray">APIキー</label>
               <div className="flex gap-2">
                 <input
                   type={showApiKey ? 'text' : 'password'}
-                  className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-lightgray transition-colors"
+                  className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
                   placeholder="AIzaSy..."
                   value={form.geminiApiKey}
                   onChange={e => setForm(f => ({ ...f, geminiApiKey: e.target.value }))}
                 />
                 <button
                   onClick={() => setShowApiKey(v => !v)}
-                  className="px-3 text-gray-400 hover:text-gray-600 bg-gray-50 border border-gray-200 rounded-lg transition-colors"
+                  className="px-3 text-sebastian-lightgray hover:text-gray-600 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg transition-colors"
                 >
                   {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-sebastian-lightgray">
                 取得先: <span className="font-mono">https://aistudio.google.com/apikey</span>（無料）
               </p>
             </div>
             <div className="space-y-2">
-              <label className="block text-sm text-gray-500">モデル</label>
+              <label className="block text-sm text-sebastian-gray">モデル</label>
               <input
                 type="text"
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-lightgray transition-colors"
+                className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
                 value={form.geminiModel}
                 onChange={e => setForm(f => ({ ...f, geminiModel: e.target.value }))}
               />
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-sebastian-lightgray">
                 推奨: <span className="font-mono">gemini-2.5-flash</span>（無料・高速）
               </p>
             </div>
@@ -291,19 +304,19 @@ export default function Settings() {
         {form.aiProvider === 'ollama' && (
           <div className="space-y-4 pt-1">
             <div className="space-y-2">
-              <label className="block text-sm text-gray-500">エンドポイントURL</label>
+              <label className="block text-sm text-sebastian-gray">エンドポイントURL</label>
               <input
                 type="text"
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-lightgray transition-colors"
+                className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
                 value={form.ollamaEndpoint}
                 onChange={e => setForm(f => ({ ...f, ollamaEndpoint: e.target.value }))}
               />
             </div>
             <div className="space-y-2">
-              <label className="block text-sm text-gray-500">モデル</label>
+              <label className="block text-sm text-sebastian-gray">モデル</label>
               <input
                 type="text"
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-lightgray transition-colors"
+                className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
                 placeholder="例: qwen2.5:3b"
                 value={form.ollamaModel}
                 onChange={e => setForm(f => ({ ...f, ollamaModel: e.target.value }))}
@@ -318,7 +331,7 @@ export default function Settings() {
             <button
               onClick={handleTest}
               disabled={testing}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-sebastian-text rounded-lg hover:bg-gray-200 transition-colors text-sm disabled:opacity-50"
             >
               <RefreshCw size={14} className={testing ? 'animate-spin' : ''} />
               {testing ? '確認中...' : '接続テスト'}
@@ -339,60 +352,70 @@ export default function Settings() {
             )}
           </div>
         )}
-      </section>
+        </div>
+      </OrnateCard>
 
       {/* レポート保存先 */}
-      <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
-        <h2 className="text-sm font-semibold text-sebastian-navy">レポート保存先</h2>
+      <OrnateCard className="p-6">
+        <div className="space-y-5">
+        <CardHeading>レポート保存先</CardHeading>
         {(['dailyReportPath', 'weeklyReportPath'] as const).map(field => (
           <div key={field} className="space-y-2">
-            <label className="block text-sm text-gray-500">
+            <label className="block text-sm text-sebastian-gray">
               {field === 'dailyReportPath' ? '日報の保存フォルダ' : '週報の保存フォルダ'}
             </label>
             <div className="flex gap-2">
               <input
                 type="text"
                 readOnly
-                className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none cursor-pointer"
+                className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none cursor-pointer"
                 placeholder="フォルダを選択してください"
                 value={form[field]}
                 onClick={() => pickFolder(field)}
               />
               <button
                 onClick={() => pickFolder(field)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                className="flex items-center gap-1.5 px-3 py-2 bg-sebastian-border/30 text-sebastian-gray rounded-lg hover:bg-sebastian-border/50 transition-colors text-sm font-serif"
               >
                 <FolderOpen size={16} />
                 参照
               </button>
             </div>
             {form[field] && (
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-sebastian-lightgray">
                 例: {form[field]}/{field === 'dailyReportPath' ? 'Nippo' : 'Shuho'}_20260331.md
               </p>
             )}
           </div>
         ))}
-      </section>
+        </div>
+      </OrnateCard>
 
       {/* 操作・起動 */}
-      <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
-        <h2 className="text-sm font-semibold text-sebastian-navy">操作・起動</h2>
+      <OrnateCard className="p-6">
+        <div className="space-y-5">
+        <CardHeading>操作・起動</CardHeading>
         <div className="space-y-2">
-          <label className="block text-sm text-gray-500">クイックメモ ショートカットキー</label>
+          <label className="block text-sm text-sebastian-gray">クイックメモ ショートカットキー</label>
           <input
             type="text"
-            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-sebastian-lightgray transition-colors"
+            className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm outline-none focus:border-sebastian-gold/50 transition-colors"
             placeholder="例: Ctrl+Shift+M"
             value={form.globalShortcut}
             onChange={e => setForm(f => ({ ...f, globalShortcut: e.target.value }))}
           />
-          <p className="text-xs text-gray-400">キーの組み合わせを入力（例: Ctrl+Shift+M、Alt+F1）</p>
+          <p className="text-xs text-sebastian-lightgray">キーの組み合わせを入力（例: Ctrl+Shift+M、Alt+F1）</p>
+          {shortcutStatus === 'ok' && (
+            <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle size={12} />ショートカットを登録しました</p>
+          )}
+          {shortcutStatus === 'error' && (
+            <p className="text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} />{shortcutError}</p>
+          )}
         </div>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-700">PC起動時に自動起動</p>
-            <p className="text-xs text-gray-400 mt-0.5">Windowsのスタートアップに登録します</p>
+            <p className="text-sm text-sebastian-text">PC起動時に自動起動</p>
+            <p className="text-xs text-sebastian-lightgray mt-0.5">Windowsのスタートアップに登録します</p>
           </div>
           <button
             onClick={() => setForm(f => ({ ...f, autostartEnabled: !f.autostartEnabled }))}
@@ -401,14 +424,16 @@ export default function Settings() {
             <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.autostartEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
           </button>
         </div>
-      </section>
+        </div>
+      </OrnateCard>
 
       {/* 終業リマインド */}
-      <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
+      <OrnateCard className="p-6">
+        <div className="space-y-5">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-sebastian-navy">終業リマインド</h2>
-            <p className="text-xs text-gray-400 mt-0.5">指定時刻に日報作成を通知します</p>
+            <CardHeading>終業リマインド</CardHeading>
+            <p className="text-xs text-sebastian-lightgray mt-0.5">指定時刻に日報作成を通知します</p>
           </div>
           <button
             onClick={() => setForm(f => ({ ...f, reminderEnabled: !f.reminderEnabled }))}
@@ -421,18 +446,18 @@ export default function Settings() {
         {form.reminderEnabled && (
           <div className="space-y-4 pt-1">
             <div className="space-y-2">
-              <label className="block text-sm text-gray-500">通知時刻</label>
+              <label className="block text-sm text-sebastian-gray">通知時刻</label>
               <input
                 type="time"
-                className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-sebastian-lightgray transition-colors"
+                className="bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm outline-none focus:border-sebastian-gold/50 transition-colors"
                 value={form.reminderTime}
                 onChange={e => setForm(f => ({ ...f, reminderTime: e.target.value }))}
               />
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-700">平日のみ通知</p>
-                <p className="text-xs text-gray-400 mt-0.5">土日は通知しません</p>
+                <p className="text-sm text-sebastian-text">平日のみ通知</p>
+                <p className="text-xs text-sebastian-lightgray mt-0.5">土日は通知しません</p>
               </div>
               <button
                 onClick={() => setForm(f => ({ ...f, reminderWeekdaysOnly: !f.reminderWeekdaysOnly }))}
@@ -441,48 +466,48 @@ export default function Settings() {
                 <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.reminderWeekdaysOnly ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-sebastian-lightgray">
               ※ 初回起動時にブラウザの通知許可が求められます。許可してください。
             </p>
           </div>
         )}
-      </section>
+        </div>
+      </OrnateCard>
 
       {/* データ同期 */}
-      <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
-        <div>
-          <h2 className="text-sm font-semibold text-sebastian-navy">データ同期</h2>
-          <p className="text-xs text-gray-400 mt-0.5">OneDrive・USBなど共有フォルダ経由でPCを切り替えます</p>
-        </div>
+      <OrnateCard className="p-6">
+        <div className="space-y-5">
+        <CardHeading>データ同期</CardHeading>
+        <p className="text-xs text-sebastian-lightgray -mt-3">OneDrive・USBなど共有フォルダ経由でPCを切り替えます</p>
 
         {/* 同期フォルダ */}
         <div className="space-y-2">
-          <label className="block text-sm text-gray-500">同期フォルダ</label>
+          <label className="block text-sm text-sebastian-gray">同期フォルダ</label>
           <div className="flex gap-2">
             <input
               type="text"
               readOnly
-              className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none cursor-pointer"
+              className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none cursor-pointer"
               placeholder="フォルダを選択してください（例: OneDrive\Sebastian）"
               value={form.syncFolder}
               onClick={() => pickFolder('syncFolder')}
             />
             <button
               onClick={() => pickFolder('syncFolder')}
-              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+              className="flex items-center gap-1.5 px-3 py-2 bg-sebastian-border/30 text-sebastian-gray rounded-lg hover:bg-sebastian-border/50 transition-colors text-sm font-serif"
             >
               <FolderOpen size={16} />
               参照
             </button>
           </div>
           {form.syncFolder && syncFolderDbTime && (
-            <p className="text-xs text-gray-400 flex items-center gap-1">
+            <p className="text-xs text-sebastian-lightgray flex items-center gap-1">
               <Clock size={11} />
               同期フォルダのDB: {syncFolderDbTime} に更新
             </p>
           )}
           {form.syncFolder && !syncFolderDbTime && (
-            <p className="text-xs text-gray-400">同期フォルダにDBファイルはまだありません（Push後に作成されます）</p>
+            <p className="text-xs text-sebastian-lightgray">同期フォルダにDBファイルはまだありません（Push後に作成されます）</p>
           )}
         </div>
 
@@ -521,22 +546,23 @@ export default function Settings() {
               </div>
             )}
 
-            <div className="bg-gray-50 rounded-lg px-3 py-2.5 space-y-1">
-              <p className="text-xs font-medium text-gray-600">使い方</p>
-              <p className="text-xs text-gray-400">出発前：メインPCで Push → サブPCで Pull して作業</p>
-              <p className="text-xs text-gray-400">帰宅後：サブPCで Push → メインPCで Pull して引き継ぎ</p>
-              <p className="text-xs text-gray-400">Pull 実行時は現在のDBが自動バックアップされます</p>
+            <div className="bg-sebastian-parchment/50 rounded-lg px-3 py-2.5 space-y-1 border border-sebastian-border/40">
+              <p className="text-xs font-medium text-sebastian-gray font-serif">使い方</p>
+              <p className="text-xs text-sebastian-lightgray">出発前：メインPCで Push → サブPCで Pull して作業</p>
+              <p className="text-xs text-sebastian-lightgray">帰宅後：サブPCで Push → メインPCで Pull して引き継ぎ</p>
+              <p className="text-xs text-sebastian-lightgray">Pull 実行時は現在のDBが自動バックアップされます</p>
             </div>
 
             {lastSyncAt && (
-              <p className="text-xs text-gray-400 flex items-center gap-1">
+              <p className="text-xs text-sebastian-lightgray flex items-center gap-1">
                 <Clock size={11} />
                 最終同期: {format(new Date(lastSyncAt), 'M月d日 HH:mm', { locale: ja })}
               </p>
             )}
           </div>
         )}
-      </section>
+        </div>
+      </OrnateCard>
 
       {errorMsg && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
@@ -548,19 +574,20 @@ export default function Settings() {
       <div className="flex items-center gap-4">
         <button
           onClick={handleSave}
-          className="bg-sebastian-navy text-white px-8 py-2.5 rounded-lg hover:bg-sebastian-dark transition-colors text-sm font-medium"
+          className="px-8 py-2.5 rounded-lg text-sm font-serif transition-colors"
+          style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}
         >
           設定を保存する
         </button>
         {saveStatus === 'saved' && (
-          <div className="flex items-center gap-1.5 text-green-600 text-sm">
+          <div className="flex items-center gap-1.5 text-green-600 text-sm font-serif">
             <CheckCircle size={16} />
             保存しました
           </div>
         )}
       </div>
 
-      <div className="text-xs text-gray-400 border-t border-gray-100 pt-4">
+      <div className="text-xs text-sebastian-lightgray/50 border-t border-sebastian-border/30 pt-4 font-serif">
         Sebastian v0.1.0 — AI Work Supporter
       </div>
     </div>

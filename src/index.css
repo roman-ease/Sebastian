@@ -1,17 +1,57 @@
 @import "tailwindcss";
 
 @theme {
-  --color-sebastian-navy: #1B263B;
-  --color-sebastian-dark: #0D1B2A;
-  --color-sebastian-ivory: #F0EAD6;
-  --color-sebastian-gray: #415A77;
-  --color-sebastian-lightgray: #778DA9;
-  --color-sebastian-bg: #F8F9FA;
+  /* ─── Sidebar / Navigation ─── */
+  --color-sebastian-navy:      #131929;
+  --color-sebastian-dark:      #0d1220;
+  --color-sebastian-mid:       #1a2540;
+
+  /* ─── Main content ─── */
+  --color-sebastian-bg:        #ece6d4;
+  --color-sebastian-parchment: #ece6d4;
+  --color-sebastian-card:      #faf7f0;
+  --color-sebastian-border:    #d5c9a8;
+
+  /* ─── Typography ─── */
+  --color-sebastian-ivory:     #d4c9a8;
+  --color-sebastian-text:      #2c2010;
+  --color-sebastian-gray:      #7a6a50;
+  --color-sebastian-lightgray: #a89878;
+
+  /* ─── Gold accent ─── */
+  --color-sebastian-gold:      #c9a456;
+  --color-sebastian-gold-dark: #a07c30;
+  --color-sebastian-gold-light: #e8d49a;
+
+  /* ─── Fonts ─── */
+  --font-display: "Cinzel", "Georgia", serif;
+  --font-serif:   "EB Garamond", "Georgia", serif;
+  --font-sans:    "EB Garamond", "Georgia", serif;
+
+  /* ─── Warm white for cards ─── */
+  --color-white:     #faf7f0;
+  --color-gray-50:   #f5efe0;
+  --color-gray-100:  #e8dfc8;
+  --color-gray-200:  #ddd3b8;
+}
+
+/* ─── Sidebar CSS variables (theme-switchable) ─── */
+:root {
+  --sidebar-bg:      #1e2e4a;
+  --sidebar-dark:    #131929;
+  --sidebar-mid:     #253558;
+  --sidebar-divider: #2e3f60;
+  --sidebar-gold:    #c9a456;
+  --sidebar-ivory:   #d4c9a8;
+  --sidebar-text-dim: rgba(212,201,168,0.60);
 }
 
 @layer base {
   body {
-    @apply bg-sebastian-bg text-sebastian-dark font-sans antialiased;
+    background-color: var(--color-sebastian-parchment);
+    color: var(--color-sebastian-text);
+    font-family: var(--font-serif);
+    -webkit-font-smoothing: antialiased;
   }
 }
 
@@ -19,85 +59,122 @@
 html.theme-dark {
   color-scheme: dark;
 
-  /* Sebastian アクセント・テキスト用 */
-  --color-sebastian-bg:        #0F172A;   /* メイン背景 */
-  --color-sebastian-navy:      #60A5FA;   /* アクセント（柔らかい青） */
-  --color-sebastian-dark:      #3B82F6;   /* ホバー */
-  --color-sebastian-ivory:     #E5E7EB;   /* ナビテキスト */
-  --color-sebastian-gray:      #9CA3AF;   /* サブテキスト */
-  --color-sebastian-lightgray: #6B7280;   /* 非活性テキスト */
+  /* ─ サイドバー ─ */
+  --sidebar-bg:      #0B1628;
+  --sidebar-dark:    #060E1C;
+  --sidebar-mid:     #142035;
+  --sidebar-divider: #1A2940;
+  --sidebar-gold:    #C8A96B;
+  --sidebar-ivory:   #D8D0C0;
+  --sidebar-text-dim: rgba(216,208,192,0.50);
 
-  /* 白・グレー → ダーク系サーフェス */
-  --color-white:    #1E293B;   /* カード背景 */
-  --color-gray-50:  #162032;   /* 微細な背景差分 */
-  --color-gray-100: #1E2D42;   /* ボーダー・タブ背景 */
-  --color-gray-200: #2D3C52;
-  --color-gray-300: #4A5568;
-  --color-gray-400: #6B7280;   /* 非活性テキスト */
-  --color-gray-500: #9CA3AF;   /* サブテキスト */
-  --color-gray-600: #CBD5E1;
-  --color-gray-700: #E5E7EB;   /* メインテキスト */
-  --color-gray-800: #F1F5F9;
-  --color-gray-900: #F8FAFC;
+  /* ─ 背景レイヤー（階層差を明確に） ─ */
+  --color-sebastian-bg:        #071224;
+  --color-sebastian-parchment: #071224;
+  --color-sebastian-dark:      #0B1628;
+  --color-sebastian-mid:       #101C30;
 
-  /* 成功 - 落ち着いたグリーン */
-  --color-green-50:  #052E16;
-  --color-green-100: #14532D;
-  --color-green-600: #16A34A;
-  --color-green-700: #22C55E;
+  /* ─ テキスト（黄み寄りの温かい白） ─ */
+  --color-sebastian-navy:      #D8D0C0;
+  --color-sebastian-ivory:     #E6DDC6;
+  --color-sebastian-text:      #E6DDC6;
+  --color-sebastian-gray:      #B8A890;
+  --color-sebastian-lightgray: #8A7D6A;
 
-  /* エラー */
-  --color-red-50:  #2C0A0A;
-  --color-red-100: #450A0A;
-  --color-red-200: #7F1D1D;
-  --color-red-400: #F87171;
-  --color-red-500: #EF4444;
-  --color-red-600: #EF4444;
-  --color-red-700: #FCA5A5;
+  /* ─ 枠線（真鍮・金属寄り） ─ */
+  --color-sebastian-border:    #4A3E2C;
 
-  /* 警告 */
-  --color-amber-50:  #2D1B00;
-  --color-amber-100: #451F00;
-  --color-amber-600: #F59E0B;
+  /* ─ ゴールド（存在感を強める） ─ */
+  --color-sebastian-gold:      #C8A96B;
+  --color-sebastian-gold-dark: #B08D57;
+  --color-sebastian-gold-light: #D4BB88;
 
-  /* ブルー系 */
+  /* ─ カード背景（青を落としグレー寄りに） ─ */
+  --color-white:    #1A2230;
+  --color-gray-50:  #131B28;
+  --color-gray-100: #1A2230;
+  --color-gray-200: #222E42;
+  --color-gray-300: #384558;
+  --color-gray-400: #6B7280;
+  --color-gray-500: #9CA3AF;
+  --color-gray-600: #B8A890;
+  --color-gray-700: #D8D0C0;
+  --color-gray-800: #E6DDC6;
+  --color-gray-900: #F0E8D8;
+
+  --color-green-50:  #0A1F12;
+  --color-green-100: #122A1A;
+  --color-green-600: #4E8C5A;
+  --color-green-700: #6AAF78;
+
+  /* ─ 赤をレンガ色に ─ */
+  --color-red-50:  #2A1210;
+  --color-red-100: #3D1A16;
+  --color-red-200: #6B2820;
+  --color-red-400: #C07060;
+  --color-red-500: #B05848;
+  --color-red-600: #A14B3B;
+  --color-red-700: #C86858;
+
+  --color-amber-50:  #2A1C08;
+  --color-amber-100: #3A2808;
+  --color-amber-600: #C8A96B;
+
   --color-blue-50:  #0C1A2E;
-  --color-blue-100: #1E3A5F;
-  --color-blue-600: #60A5FA;
+  --color-blue-100: #1A2230;
+  --color-blue-600: #7AACCC;
 
-  --color-orange-400: #FB923C;
+  --color-orange-400: #C89050;
 }
 
-/* サイドバー: アクセントブルーではなくダーク背景を使用 */
-html.theme-dark aside {
-  background-color: #111827;
+
+/* ─ ダークモード：カードにグラデーションと真鍮枠 ─ */
+html.theme-dark .ornate-card {
+  background: linear-gradient(180deg, #1E2A3D 0%, #1A2230 100%) !important;
+  border-color: rgba(176, 141, 87, 0.40) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
 }
-html.theme-dark aside .border-sebastian-dark {
-  border-color: #0B1220;
-}
-/* アクティブなNavLink: 明るいブルーではなく柔らかいハイライト */
-html.theme-dark aside .bg-sebastian-dark {
-  background-color: rgba(96, 165, 250, 0.12);
+
+/* ─ ダークモード：執事イラストをUIに馴染ませる ─ */
+html.theme-dark .butler-img {
+  opacity: 0.80 !important;
+  filter: brightness(0.9) saturate(0.8) !important;
 }
 
 /* ─── Sepia Theme ────────────────────────────────────────── */
 html.theme-sepia {
-  --color-sebastian-bg:        #f0e8d5;
-  --color-sebastian-navy:      #5c3d2e;
-  --color-sebastian-dark:      #3d2214;
-  --color-sebastian-ivory:     #fdf8f0;
-  --color-sebastian-gray:      #7c5c4a;
-  --color-sebastian-lightgray: #a68970;
+  /* ─ サイドバー（ダークウォールナット） ─ */
+  --sidebar-bg:      #2a1a0e;
+  --sidebar-dark:    #1a0e06;
+  --sidebar-mid:     #3d2510;
+  --sidebar-divider: #4a2e18;
+  --sidebar-gold:    #b07a20;
+  --sidebar-ivory:   #f0e0c0;
+  --sidebar-text-dim: rgba(240,224,192,0.50);
 
-  --color-white:     #fdfaf2;
-  --color-gray-50:   #f7f0e4;
-  --color-gray-100:  #ede4d4;
-  --color-gray-200:  #e0d4c0;
-  --color-gray-300:  #c8b89e;
-  --color-gray-400:  #a89278;
-  --color-gray-500:  #8c7860;
-  --color-gray-600:  #735f4c;
-  --color-gray-700:  #5a4838;
-  --color-gray-800:  #3d2b1f;
-  --color-gray-900:  #2a1a10;
+  --color-sebastian-bg:        #cbb98a;
+  --color-sebastian-parchment: #cbb98a;
+  --color-sebastian-navy:      #3d2510;
+  --color-sebastian-dark:      #2a1508;
+  --color-sebastian-mid:       #4a2e18;
+  --color-sebastian-ivory:     #f0e0c0;
+  --color-sebastian-text:      #1e1008;
+  --color-sebastian-gray:      #5c3d28;
+  --color-sebastian-lightgray: #8a6848;
+  --color-sebastian-border:    #a8885a;
+  --color-sebastian-gold:      #a07020;
+  --color-sebastian-gold-dark: #7a5010;
+  --color-sebastian-gold-light: #d4a850;
+
+  --color-white:     #e8d8b0;
+  --color-gray-50:   #e0cfa0;
+  --color-gray-100:  #d4bf90;
+  --color-gray-200:  #c8af80;
+  --color-gray-300:  #b89870;
+  --color-gray-400:  #a08060;
+  --color-gray-500:  #886848;
+  --color-gray-600:  #705238;
+  --color-gray-700:  #5a4030;
+  --color-gray-800:  #3d2818;
+  --color-gray-900:  #2a1808;
 }

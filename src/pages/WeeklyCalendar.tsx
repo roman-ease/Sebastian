@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  startOfWeek, addDays, format, isSameDay, isToday,
+  startOfWeek, addDays, format, isToday,
   addWeeks, subWeeks, isSameWeek,
 } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import { selectDb } from '../lib/db';
+import { PRIORITY_COLOR } from '../lib/constants';
 
 interface TaskItem {
   id: number;
@@ -20,12 +21,6 @@ interface DayData {
   hasMemo: boolean;
 }
 
-const PRIORITY_COLORS: Record<string, string> = {
-  high: 'bg-red-50 text-red-700 border-red-100',
-  medium: 'bg-blue-50 text-blue-700 border-blue-100',
-  low: 'bg-gray-50 text-gray-600 border-gray-100',
-  none: 'bg-gray-50 text-gray-500 border-gray-100',
-};
 
 const DAY_NAMES = ['月', '火', '水', '木', '金', '土', '日'];
 
@@ -72,16 +67,21 @@ export default function WeeklyCalendar() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-medium text-sebastian-gray mb-1">CALENDAR</h2>
-          <h1 className="text-2xl font-serif text-sebastian-navy">週スケジュール</h1>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="flex items-start justify-between mb-6">
+        <header>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-[11px] font-display tracking-[0.22em] text-sebastian-gray uppercase shrink-0">Calendar</span>
+            <div className="flex-1 h-px bg-sebastian-gold/20" />
+            <span className="text-sebastian-gold/45 text-[10px] shrink-0">◆</span>
+            <div className="w-10 h-px bg-sebastian-gold/20" />
+          </div>
+          <h1 className="text-3xl font-serif text-sebastian-navy">週スケジュール</h1>
+        </header>
+        <div className="flex items-center gap-2 mt-1">
           {!isCurrentWeek && (
             <button
               onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}
-              className="flex items-center gap-1 text-xs text-sebastian-gray hover:text-sebastian-navy border border-gray-200 rounded-lg px-2.5 py-1.5 transition-colors"
+              className="flex items-center gap-1 text-xs text-sebastian-gray hover:text-sebastian-navy border border-sebastian-border rounded-lg px-2.5 py-1.5 transition-colors font-serif"
             >
               <RotateCcw size={12} />
               今週
@@ -89,21 +89,21 @@ export default function WeeklyCalendar() {
           )}
           <button
             onClick={() => setWeekStart(w => subWeeks(w, 1))}
-            className="p-1.5 text-gray-400 hover:text-sebastian-navy hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-1.5 text-sebastian-lightgray hover:text-sebastian-navy hover:bg-sebastian-parchment rounded-lg transition-colors"
           >
             <ChevronLeft size={18} />
           </button>
-          <span className="text-sm text-gray-600 font-medium min-w-[160px] text-center">
+          <span className="text-sm text-sebastian-gray font-serif min-w-[160px] text-center">
             {format(weekStart, 'yyyy年M月d日', { locale: ja })} 〜 {format(weekEnd, 'M月d日', { locale: ja })}
           </span>
           <button
             onClick={() => setWeekStart(w => addWeeks(w, 1))}
-            className="p-1.5 text-gray-400 hover:text-sebastian-navy hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-1.5 text-sebastian-lightgray hover:text-sebastian-navy hover:bg-sebastian-parchment rounded-lg transition-colors"
           >
             <ChevronRight size={18} />
           </button>
         </div>
-      </header>
+      </div>
 
       {/* カレンダーグリッド */}
       <div className="grid grid-cols-7 gap-2">
@@ -117,25 +117,27 @@ export default function WeeklyCalendar() {
           return (
             <div
               key={i}
-              className={`rounded-xl border min-h-[160px] flex flex-col overflow-hidden ${
+              className={`relative rounded-xl border min-h-[160px] flex flex-col overflow-hidden ${
                 today
-                  ? 'border-sebastian-navy shadow-sm'
-                  : 'border-gray-100'
-              } ${isWeekend ? 'bg-gray-50/50' : 'bg-white'}`}
+                  ? 'shadow-sm'
+                  : 'border-sebastian-border/60'
+              } ${isWeekend ? 'bg-sebastian-parchment/40' : 'bg-white'}`}
+              style={today ? { borderColor: 'rgba(201,164,86,0.5)', boxShadow: '0 0 0 1px rgba(201,164,86,0.3)' } : undefined}
             >
               {/* ヘッダー */}
               <div
                 className={`px-3 py-2 flex items-center justify-between ${
-                  today ? 'bg-sebastian-navy text-white' : ''
+                  today ? '' : ''
                 }`}
+                style={today ? { backgroundColor: '#131929' } : undefined}
               >
-                <span className={`text-xs font-medium ${
-                  today ? 'text-white' : isWeekend ? 'text-gray-400' : 'text-gray-500'
+                <span className={`text-xs font-serif ${
+                  today ? 'text-[#c9a456]' : isWeekend ? 'text-sebastian-lightgray' : 'text-sebastian-gray'
                 }`}>
                   {DAY_NAMES[i]}
                 </span>
-                <span className={`text-sm font-semibold ${
-                  today ? 'text-white' : isWeekend ? 'text-gray-400' : 'text-gray-700'
+                <span className={`text-sm font-semibold font-serif ${
+                  today ? 'text-[#d4c9a8]' : isWeekend ? 'text-sebastian-lightgray' : 'text-sebastian-text'
                 }`}>
                   {dateStr}
                 </span>
@@ -146,22 +148,22 @@ export default function WeeklyCalendar() {
                 {day.tasks.slice(0, maxVisible).map(task => (
                   <div
                     key={task.id}
-                    className={`text-xs px-2 py-1 rounded border truncate ${PRIORITY_COLORS[task.priority]}`}
+                    className={`text-xs px-2 py-1 rounded border truncate font-serif ${PRIORITY_COLOR[task.priority]}`}
                     title={task.title}
                   >
                     {task.title}
                   </div>
                 ))}
                 {overflowCount > 0 && (
-                  <div className="text-xs text-gray-400 px-2">+{overflowCount} 件</div>
+                  <div className="text-xs text-sebastian-lightgray px-2 font-serif">+{overflowCount} 件</div>
                 )}
               </div>
 
               {/* メモインジケーター */}
               {day.hasMemo && (
                 <div className="px-3 pb-2">
-                  <span className="text-xs text-sebastian-lightgray flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-sebastian-lightgray inline-block" />
+                  <span className="text-xs text-sebastian-lightgray/70 flex items-center gap-1 font-serif">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sebastian-gold/40 inline-block" />
                     メモあり
                   </span>
                 </div>
@@ -171,7 +173,7 @@ export default function WeeklyCalendar() {
         })}
       </div>
 
-      <p className="text-xs text-gray-400 text-center">
+      <p className="text-xs text-sebastian-lightgray/60 text-center font-serif">
         期日が設定されたタスクが表示されます。完了済みタスクは除外されています。
       </p>
     </div>

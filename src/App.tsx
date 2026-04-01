@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { registerShortcut } from './lib/shortcut';

@@ -9,9 +9,11 @@ export function applyTheme(theme: Theme) {
   if (theme === 'sepia') html.classList.add('theme-sepia');
 }
 
+const VALID_THEMES: Theme[] = ['light', 'dark', 'sepia'];
+
 export async function loadAndApplyTheme(): Promise<Theme> {
-  const saved = (await getSetting(SETTING_KEYS.THEME)) as Theme | null;
-  const theme = saved ?? 'light';
+  const saved = await getSetting(SETTING_KEYS.THEME);
+  const theme: Theme = VALID_THEMES.includes(saved as Theme) ? (saved as Theme) : 'light';
   applyTheme(theme);
   return theme;
 }

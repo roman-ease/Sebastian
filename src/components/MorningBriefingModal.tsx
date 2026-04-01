@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format, addDays } from 'date-fns';
 import { Bell, X, ArrowRight } from 'lucide-react';
 import { selectDb } from '../lib/db';
 import { setSetting, SETTING_KEYS } from '../lib/settings';
+import { PRIORITY_COLOR, PRIORITY_LABEL } from '../lib/constants';
 
 interface TaskBrief {
   id: number;
@@ -17,15 +18,6 @@ interface Props {
   onDismiss: () => void;
 }
 
-const PRIORITY_COLOR: Record<string, string> = {
-  high: 'bg-red-50 text-red-600',
-  medium: 'bg-blue-50 text-blue-600',
-  low: 'bg-gray-100 text-gray-500',
-  none: 'bg-gray-50 text-gray-400',
-};
-const PRIORITY_LABEL: Record<string, string> = {
-  high: '高', medium: '中', low: '低', none: '',
-};
 
 export function MorningBriefingModal({ onDismiss }: Props) {
   const [todayTasks, setTodayTasks] = useState<TaskBrief[]>([]);
@@ -67,20 +59,26 @@ export function MorningBriefingModal({ onDismiss }: Props) {
   const hasTasks = todayTasks.length > 0 || soonTasks.length > 0 || highTasks.length > 0;
 
   return (
-    <div className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+      <div className="relative rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col" style={{ backgroundColor: '#faf7f0', border: '1px solid #d5c9a8' }}>
+        {/* Corner ornaments */}
+        <span className="absolute top-2.5 left-2.5 w-4 h-4 border-t border-l border-sebastian-gold/30 pointer-events-none rounded-tl-sm" />
+        <span className="absolute top-2.5 right-2.5 w-4 h-4 border-t border-r border-sebastian-gold/30 pointer-events-none rounded-tr-sm" />
+        <span className="absolute bottom-2.5 left-2.5 w-4 h-4 border-b border-l border-sebastian-gold/30 pointer-events-none rounded-bl-sm" />
+        <span className="absolute bottom-2.5 right-2.5 w-4 h-4 border-b border-r border-sebastian-gold/30 pointer-events-none rounded-br-sm" />
+
         {/* ヘッダー */}
-        <div className="p-6 border-b border-gray-100 flex items-start justify-between flex-shrink-0">
+        <div className="p-6 border-b border-sebastian-border/50 flex items-start justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-sebastian-navy/5 flex items-center justify-center">
-              <Bell size={18} className="text-sebastian-navy" />
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(201,164,86,0.1)', border: '1px solid rgba(201,164,86,0.3)' }}>
+              <Bell size={18} style={{ color: '#c9a456' }} />
             </div>
             <div>
               <h2 className="font-serif text-sebastian-navy text-lg">おはようございます</h2>
-              <p className="text-xs text-gray-400 mt-0.5">本日の状況をお知らせします</p>
+              <p className="text-xs text-sebastian-lightgray mt-0.5 font-serif">本日の状況をお知らせします</p>
             </div>
           </div>
-          <button onClick={handleDismiss} className="text-gray-300 hover:text-gray-500 transition-colors mt-0.5">
+          <button onClick={handleDismiss} className="text-sebastian-lightgray/50 hover:text-sebastian-lightgray transition-colors mt-0.5">
             <X size={18} />
           </button>
         </div>
@@ -88,20 +86,22 @@ export function MorningBriefingModal({ onDismiss }: Props) {
         {/* コンテンツ */}
         <div className="p-6 space-y-5 overflow-y-auto flex-1">
           {!hasTasks && (
-            <p className="text-sm text-gray-400 text-center py-6">
+            <p className="text-sm text-sebastian-lightgray text-center py-6 font-serif">
               本日期日・優先度の高いタスクはありません。<br />
-              <span className="text-xs">良い1日を。</span>
+              <span className="text-xs italic">良い1日を。</span>
             </p>
           )}
 
           {todayTasks.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-sebastian-gray uppercase tracking-wide mb-2">
-                今日が期日
-              </h3>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-xs font-serif text-sebastian-gray shrink-0">今日が期日</h3>
+                <span className="text-sebastian-gold/40 text-[9px] shrink-0">◆</span>
+                <div className="flex-1 h-px bg-sebastian-gold/15" />
+              </div>
               <ul className="space-y-2">
                 {todayTasks.map(t => (
-                  <li key={t.id} className="flex items-center gap-2 text-sm text-gray-700">
+                  <li key={t.id} className="flex items-center gap-2 text-sm text-sebastian-text font-serif">
                     <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
                       {PRIORITY_LABEL[t.priority] || '—'}
                     </span>
@@ -114,18 +114,20 @@ export function MorningBriefingModal({ onDismiss }: Props) {
 
           {soonTasks.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-sebastian-gray uppercase tracking-wide mb-2">
-                3日以内が期日
-              </h3>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-xs font-serif text-sebastian-gray shrink-0">3日以内が期日</h3>
+                <span className="text-sebastian-gold/40 text-[9px] shrink-0">◆</span>
+                <div className="flex-1 h-px bg-sebastian-gold/15" />
+              </div>
               <ul className="space-y-2">
                 {soonTasks.map(t => (
-                  <li key={t.id} className="flex items-center gap-2 text-sm text-gray-700">
+                  <li key={t.id} className="flex items-center gap-2 text-sm text-sebastian-text font-serif">
                     <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
                       {PRIORITY_LABEL[t.priority] || '—'}
                     </span>
                     <span className="flex-1 min-w-0 truncate">{t.title}</span>
                     {t.due_date && (
-                      <span className="text-xs text-gray-400 flex-shrink-0">
+                      <span className="text-xs text-sebastian-lightgray flex-shrink-0 font-serif">
                         {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
                       </span>
                     )}
@@ -137,16 +139,18 @@ export function MorningBriefingModal({ onDismiss }: Props) {
 
           {highTasks.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-sebastian-gray uppercase tracking-wide mb-2">
-                優先度が高いタスク
-              </h3>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-xs font-serif text-sebastian-gray shrink-0">優先度が高いタスク</h3>
+                <span className="text-sebastian-gold/40 text-[9px] shrink-0">◆</span>
+                <div className="flex-1 h-px bg-sebastian-gold/15" />
+              </div>
               <ul className="space-y-2">
                 {highTasks.map(t => (
-                  <li key={t.id} className="flex items-center gap-2 text-sm text-gray-700">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
+                  <li key={t.id} className="flex items-center gap-2 text-sm text-sebastian-text font-serif">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sebastian-gold/60 flex-shrink-0" />
                     <span className="flex-1 min-w-0 truncate">{t.title}</span>
                     {t.due_date && (
-                      <span className="text-xs text-gray-400 flex-shrink-0">
+                      <span className="text-xs text-sebastian-lightgray flex-shrink-0 font-serif">
                         {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
                       </span>
                     )}
@@ -158,17 +162,18 @@ export function MorningBriefingModal({ onDismiss }: Props) {
         </div>
 
         {/* フッター */}
-        <div className="p-5 border-t border-gray-100 flex items-center gap-3 flex-shrink-0">
+        <div className="p-5 border-t border-sebastian-border/50 flex items-center gap-3 flex-shrink-0">
           <Link
             to="/tasks"
             onClick={handleDismiss}
-            className="flex items-center gap-1 text-sm text-sebastian-gray hover:text-sebastian-navy transition-colors"
+            className="flex items-center gap-1 text-sm text-sebastian-gray hover:text-sebastian-navy transition-colors font-serif"
           >
             タスク一覧 <ArrowRight size={13} />
           </Link>
           <button
             onClick={handleDismiss}
-            className="ml-auto bg-sebastian-navy text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-sebastian-dark transition-colors"
+            className="ml-auto px-5 py-2 rounded-lg text-sm font-serif transition-colors"
+            style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}
           >
             確認しました
           </button>
