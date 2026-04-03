@@ -14,6 +14,7 @@ export const SETTING_KEYS = {
   REMINDER_TIME: 'reminder_time',
   REMINDER_WEEKDAYS_ONLY: 'reminder_weekdays_only',
   LAST_BRIEFING_DATE: 'last_briefing_date',
+  BUTLER_BRIEFING: 'butler_briefing',
   THEME: 'theme',
   SYNC_FOLDER: 'sync_folder',
   LAST_SYNC_AT: 'last_sync_at',
