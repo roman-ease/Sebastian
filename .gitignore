@@ -34,3 +34,6 @@ Report/
 
 # Internal handoff / transfer documents
 HANDOFF.md
+
+# Project docs (not for version control)
+docs/

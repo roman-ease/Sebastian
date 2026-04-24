@@ -100,6 +100,36 @@ async function callOllama(systemPrompt: string, userMessage: string): Promise<st
 
 // ─── Gemini API ────────────────────────────────────────────────
 
+const GEMINI_RETRY_DELAYS = [3000, 8000]; // ms
+
+function isGeminiOverload(status: number, message: string): boolean {
+  return status === 503 || status === 429 || message.toLowerCase().includes('high demand') || message.toLowerCase().includes('overloaded');
+}
+
+async function fetchGeminiWithRetry(url: string, bodyObj: object): Promise<Response> {
+  let lastErr = '';
+  for (let attempt = 0; attempt <= GEMINI_RETRY_DELAYS.length; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, GEMINI_RETRY_DELAYS[attempt - 1]));
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyObj),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
+      const msg = body.error?.message ?? `HTTP ${res.status}`;
+      if (isGeminiOverload(res.status, msg) && attempt < GEMINI_RETRY_DELAYS.length) {
+        lastErr = msg;
+        continue;
+      }
+      throw new Error(`Gemini エラー: ${msg}`);
+    }
+    return res;
+  }
+  throw new Error(`Gemini エラー: ${lastErr}（混雑が続いています。しばらく待つか、Ollama に切り替えてください）`);
+}
+
 export async function checkGeminiConnection(apiKey?: string, model?: string): Promise<{ connected: boolean; error?: string }> {
   const key = apiKey ?? (await getSetting(SETTING_KEYS.GEMINI_API_KEY)) ?? '';
   const mdl = model ?? (await getSetting(SETTING_KEYS.GEMINI_MODEL)) ?? 'gemini-2.0-flash';
@@ -131,24 +161,14 @@ async function callGemini(systemPrompt: string, userMessage: string): Promise<st
 
   if (!apiKey) throw new Error('Gemini APIキーが設定されていません。設定画面から入力してください。');
 
-  const res = await fetch(
+  const res = await fetchGeminiWithRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 8192 },
-      }),
-      signal: AbortSignal.timeout(60_000),
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 8192 },
     }
   );
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(`Gemini エラー: ${body.error?.message ?? `HTTP ${res.status}`}`);
-  }
 
   const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[] };
   const candidate = data.candidates?.[0];
@@ -380,27 +400,18 @@ async function callAIForJson(systemPrompt: string, userMessage: string): Promise
     const model = (await getSetting(SETTING_KEYS.GEMINI_MODEL)) ?? 'gemini-2.0-flash';
     if (!apiKey) throw new Error('Gemini APIキーが設定されていません');
 
-    const res = await fetch(
+    const res = await fetchGeminiWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 8192,
-            responseMimeType: 'application/json',
-          },
-        }),
-        signal: AbortSignal.timeout(60_000),
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 8192,
+          responseMimeType: 'application/json',
+        },
       }
     );
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
-      throw new Error(`Gemini エラー: ${body.error?.message ?? `HTTP ${res.status}`}`);
-    }
     const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '{"candidates":[]}';
     return cleanJsonResponse(raw);

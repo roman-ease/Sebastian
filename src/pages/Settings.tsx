@@ -477,9 +477,9 @@ export default function Settings() {
           </div>
           <button
             onClick={() => setForm(f => ({ ...f, autostartEnabled: !f.autostartEnabled }))}
-            className={`relative w-11 h-6 rounded-full transition-colors ${form.autostartEnabled ? 'bg-sebastian-navy' : 'bg-gray-200'}`}
+            className={`relative w-11 h-6 rounded-full transition-colors overflow-hidden shrink-0 ${form.autostartEnabled ? 'bg-sebastian-gold' : 'bg-sebastian-border/50'}`}
           >
-            <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.autostartEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-200 ${form.autostartEnabled ? 'left-6' : 'left-1'}`} />
           </button>
         </div>
         </div>
@@ -495,9 +495,9 @@ export default function Settings() {
           </div>
           <button
             onClick={() => setForm(f => ({ ...f, reminderEnabled: !f.reminderEnabled }))}
-            className={`relative w-11 h-6 rounded-full transition-colors ${form.reminderEnabled ? 'bg-sebastian-navy' : 'bg-gray-200'}`}
+            className={`relative w-11 h-6 rounded-full transition-colors overflow-hidden shrink-0 ${form.reminderEnabled ? 'bg-sebastian-gold' : 'bg-sebastian-border/50'}`}
           >
-            <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.reminderEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-200 ${form.reminderEnabled ? 'left-6' : 'left-1'}`} />
           </button>
         </div>
 
@@ -519,9 +519,9 @@ export default function Settings() {
               </div>
               <button
                 onClick={() => setForm(f => ({ ...f, reminderWeekdaysOnly: !f.reminderWeekdaysOnly }))}
-                className={`relative w-11 h-6 rounded-full transition-colors ${form.reminderWeekdaysOnly ? 'bg-sebastian-navy' : 'bg-gray-200'}`}
+                className={`relative w-11 h-6 rounded-full transition-colors overflow-hidden shrink-0 ${form.reminderWeekdaysOnly ? 'bg-sebastian-gold' : 'bg-sebastian-border/50'}`}
               >
-                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.reminderWeekdaysOnly ? 'translate-x-6' : 'translate-x-1'}`} />
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-200 ${form.reminderWeekdaysOnly ? 'left-6' : 'left-1'}`} />
               </button>
             </div>
             <p className="text-xs text-sebastian-lightgray">
