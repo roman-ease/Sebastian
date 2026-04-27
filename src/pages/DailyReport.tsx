@@ -52,7 +52,7 @@ export default function DailyReport() {
           'SELECT task_id, action_type, before_json, after_json, actor_type, note, created_at FROM task_logs WHERE DATE(created_at) = ? ORDER BY created_at ASC',
           [today]
         ),
-        selectDb<TaskEntry>('SELECT id, title, status, priority, category FROM tasks ORDER BY created_at DESC'),
+        selectDb<TaskEntry>('SELECT id, title, status, priority, category FROM tasks WHERE archived = 0 ORDER BY created_at DESC'),
       ]);
 
       const memo = memoRows[0]?.content ?? '';
@@ -106,7 +106,7 @@ export default function DailyReport() {
     setCandidateState('extracting');
     setErrorMsg('');
     try {
-      const tasks = await selectDb<TaskEntry>('SELECT id, title, status, priority, category FROM tasks ORDER BY created_at DESC');
+      const tasks = await selectDb<TaskEntry>('SELECT id, title, status, priority, category FROM tasks WHERE archived = 0 ORDER BY created_at DESC');
       const result = await extractTaskCandidates(memoContent, tasks, today);
       setCandidates(result);
       setCandidateState('ready');
