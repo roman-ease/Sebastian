@@ -119,7 +119,7 @@ async function fetchGeminiWithRetry(url: string, bodyObj: object): Promise<Respo
     if (!res.ok) {
       const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
       const msg = body.error?.message ?? `HTTP ${res.status}`;
-      if (isGeminiOverload(res.status, msg) && attempt < GEMINI_RETRY_DELAYS.length) {
+      if (isGeminiOverload(res.status, msg)) {
         lastErr = msg;
         continue;
       }
