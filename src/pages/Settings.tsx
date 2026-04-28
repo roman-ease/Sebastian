@@ -2,17 +2,26 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
-import { FolderOpen, CheckCircle, AlertCircle, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Upload, Download, Clock, FileDown } from 'lucide-react';
+import { FolderOpen, CheckCircle, AlertCircle, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Upload, Download, Clock, FileDown, Pencil, Trash2, Plus, X } from 'lucide-react';
 import { getSetting, setSetting, SETTING_KEYS } from '../lib/settings';
 import { PageHeader, OrnateCard, CardHeading } from '../components/ClassicUI';
 import { registerShortcut } from '../lib/shortcut';
 import { checkOllamaConnection, checkGeminiConnection, type OllamaStatus } from '../lib/ai';
 import { pushSync, pullSync, getSyncFolderDbMtime } from '../lib/sync';
-import { selectDb } from '../lib/db';
+import { selectDb, executeDb } from '../lib/db';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
-type AiProvider = 'gemini' | 'ollama' | 'disabled';
+type AiProvider = 'gemini' | 'claude' | 'openai' | 'groq' | 'openrouter' | 'lmstudio' | 'ollama' | 'disabled' | `custom:${string}`;
+
+interface CustomProvider {
+  id: string;
+  name: string;
+  type: string;
+  endpoint: string;
+  api_key: string | null;
+  model: string;
+}
 
 interface SettingsForm {
   dailyReportPath: string;
@@ -24,6 +33,16 @@ interface SettingsForm {
   geminiModel: string;
   ollamaEndpoint: string;
   ollamaModel: string;
+  claudeApiKey: string;
+  claudeModel: string;
+  openaiApiKey: string;
+  openaiModel: string;
+  groqApiKey: string;
+  groqModel: string;
+  openrouterApiKey: string;
+  openrouterModel: string;
+  lmstudioEndpoint: string;
+  lmstudioModel: string;
   reminderEnabled: boolean;
   reminderTime: string;
   reminderWeekdaysOnly: boolean;
@@ -41,11 +60,25 @@ export default function Settings() {
     geminiModel: 'gemini-2.5-flash',
     ollamaEndpoint: 'http://localhost:11434',
     ollamaModel: 'qwen2.5:7b',
+    claudeApiKey: '',
+    claudeModel: 'claude-haiku-4-5-20251001',
+    openaiApiKey: '',
+    openaiModel: 'gpt-4o-mini',
+    groqApiKey: '',
+    groqModel: 'llama-3.3-70b-versatile',
+    openrouterApiKey: '',
+    openrouterModel: 'google/gemini-flash-1.5',
+    lmstudioEndpoint: 'http://localhost:1234',
+    lmstudioModel: 'local-model',
     reminderEnabled: false,
     reminderTime: '18:00',
     reminderWeekdaysOnly: true,
     syncFolder: '',
   });
+  const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
+  const [showAddProvider, setShowAddProvider] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<CustomProvider | null>(null);
+  const [providerForm, setProviderForm] = useState({ id: '', name: '', type: 'openai', endpoint: '', apiKey: '', model: '' });
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'done' | 'error'>('idle');
   const [exportMsg, setExportMsg] = useState('');
   const [syncStatus, setSyncStatus] = useState<'idle' | 'pushing' | 'pulling' | 'done' | 'error'>('idle');
@@ -64,6 +97,9 @@ export default function Settings() {
     async function load() {
       const [daily, weekly, shortcut, autostart, autostartActual,
         provider, gemKey, gemModel, olEndpoint, olModel,
+        claudeKey, claudeModel, openaiKey, openaiModel,
+        groqKey, groqModel, openrouterKey, openrouterModel,
+        lmstudioEndpoint, lmstudioModel,
         reminderEnabled, reminderTime, reminderWeekdaysOnly,
         syncFolderSetting, lastSyncAtSetting] = await Promise.all([
         getSetting(SETTING_KEYS.DAILY_REPORT_PATH),
@@ -76,6 +112,16 @@ export default function Settings() {
         getSetting(SETTING_KEYS.GEMINI_MODEL),
         getSetting(SETTING_KEYS.OLLAMA_ENDPOINT),
         getSetting(SETTING_KEYS.OLLAMA_MODEL),
+        getSetting(SETTING_KEYS.CLAUDE_API_KEY),
+        getSetting(SETTING_KEYS.CLAUDE_MODEL),
+        getSetting(SETTING_KEYS.OPENAI_API_KEY),
+        getSetting(SETTING_KEYS.OPENAI_MODEL),
+        getSetting(SETTING_KEYS.GROQ_API_KEY),
+        getSetting(SETTING_KEYS.GROQ_MODEL),
+        getSetting(SETTING_KEYS.OPENROUTER_API_KEY),
+        getSetting(SETTING_KEYS.OPENROUTER_MODEL),
+        getSetting(SETTING_KEYS.LMSTUDIO_ENDPOINT),
+        getSetting(SETTING_KEYS.LMSTUDIO_MODEL),
         getSetting(SETTING_KEYS.REMINDER_ENABLED),
         getSetting(SETTING_KEYS.REMINDER_TIME),
         getSetting(SETTING_KEYS.REMINDER_WEEKDAYS_ONLY),
@@ -89,6 +135,8 @@ export default function Settings() {
           if (mtime) setSyncFolderDbTime(format(new Date(mtime * 1000), 'M/d HH:mm', { locale: ja }));
         }).catch(() => {});
       }
+      const cpRows = await selectDb<CustomProvider>('SELECT * FROM custom_providers ORDER BY created_at ASC');
+      setCustomProviders(cpRows);
       setForm({
         dailyReportPath: daily ?? '',
         weeklyReportPath: weekly ?? '',
@@ -99,6 +147,16 @@ export default function Settings() {
         geminiModel: gemModel ?? 'gemini-2.0-flash',
         ollamaEndpoint: olEndpoint ?? 'http://localhost:11434',
         ollamaModel: olModel ?? 'qwen2.5:7b',
+        claudeApiKey: claudeKey ?? '',
+        claudeModel: claudeModel ?? 'claude-haiku-4-5-20251001',
+        openaiApiKey: openaiKey ?? '',
+        openaiModel: openaiModel ?? 'gpt-4o-mini',
+        groqApiKey: groqKey ?? '',
+        groqModel: groqModel ?? 'llama-3.3-70b-versatile',
+        openrouterApiKey: openrouterKey ?? '',
+        openrouterModel: openrouterModel ?? 'google/gemini-flash-1.5',
+        lmstudioEndpoint: lmstudioEndpoint ?? 'http://localhost:1234',
+        lmstudioModel: lmstudioModel ?? 'local-model',
         reminderEnabled: reminderEnabled === 'true',
         reminderTime: reminderTime ?? '18:00',
         reminderWeekdaysOnly: reminderWeekdaysOnly !== 'false',
@@ -136,9 +194,49 @@ export default function Settings() {
           ? { ok: true, msg: `接続成功 — 利用可能なモデル: ${result.models.join(', ') || 'なし'}` }
           : { ok: false, msg: `接続失敗: ${result.error ?? '不明なエラー'}` }
         );
+      } else if (form.aiProvider === 'claude') {
+        if (!form.claudeApiKey) { setTestStatus({ ok: false, msg: 'APIキーが未入力です' }); return; }
+        try {
+          const res = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': form.claudeApiKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({ model: form.claudeModel, max_tokens: 10, messages: [{ role: 'user', content: 'test' }] }),
+            signal: AbortSignal.timeout(8000),
+          });
+          setTestStatus({ ok: res.ok || res.status === 400, msg: res.ok || res.status === 400 ? 'Claude に接続できました' : `エラー (${res.status})` });
+        } catch (e) {
+          setTestStatus({ ok: false, msg: `接続失敗: ${e instanceof Error ? e.message : String(e)}` });
+        }
+      } else if (['openai', 'groq', 'openrouter', 'lmstudio'].includes(form.aiProvider) || form.aiProvider.startsWith('custom:')) {
+        setTestStatus({ ok: true, msg: '設定を保存しました。実際の動作は日報生成などで確認してください。' });
       }
     } finally {
       setTesting(false);
+    }
+  };
+
+  const saveCustomProvider = async () => {
+    const { id, name, type, endpoint, apiKey, model } = providerForm;
+    if (!id || !name || !endpoint || !model) return;
+    if (editingProvider) {
+      await executeDb('UPDATE custom_providers SET name=?, type=?, endpoint=?, api_key=?, model=? WHERE id=?',
+        [name, type, endpoint, apiKey || null, model, editingProvider.id]);
+    } else {
+      await executeDb('INSERT INTO custom_providers (id, name, type, endpoint, api_key, model) VALUES (?, ?, ?, ?, ?, ?)',
+        [id, name, type, endpoint, apiKey || null, model]);
+    }
+    const rows = await selectDb<CustomProvider>('SELECT * FROM custom_providers ORDER BY created_at ASC');
+    setCustomProviders(rows);
+    setShowAddProvider(false);
+    setEditingProvider(null);
+    setProviderForm({ id: '', name: '', type: 'openai', endpoint: '', apiKey: '', model: '' });
+  };
+
+  const deleteCustomProvider = async (id: string) => {
+    await executeDb('DELETE FROM custom_providers WHERE id=?', [id]);
+    setCustomProviders(prev => prev.filter(p => p.id !== id));
+    if (form.aiProvider === `custom:${id}`) {
+      setForm(f => ({ ...f, aiProvider: 'disabled' as AiProvider }));
     }
   };
 
@@ -156,6 +254,16 @@ export default function Settings() {
         setSetting(SETTING_KEYS.GEMINI_MODEL, form.geminiModel),
         setSetting(SETTING_KEYS.OLLAMA_ENDPOINT, form.ollamaEndpoint),
         setSetting(SETTING_KEYS.OLLAMA_MODEL, form.ollamaModel),
+        setSetting(SETTING_KEYS.CLAUDE_API_KEY, form.claudeApiKey),
+        setSetting(SETTING_KEYS.CLAUDE_MODEL, form.claudeModel),
+        setSetting(SETTING_KEYS.OPENAI_API_KEY, form.openaiApiKey),
+        setSetting(SETTING_KEYS.OPENAI_MODEL, form.openaiModel),
+        setSetting(SETTING_KEYS.GROQ_API_KEY, form.groqApiKey),
+        setSetting(SETTING_KEYS.GROQ_MODEL, form.groqModel),
+        setSetting(SETTING_KEYS.OPENROUTER_API_KEY, form.openrouterApiKey),
+        setSetting(SETTING_KEYS.OPENROUTER_MODEL, form.openrouterModel),
+        setSetting(SETTING_KEYS.LMSTUDIO_ENDPOINT, form.lmstudioEndpoint),
+        setSetting(SETTING_KEYS.LMSTUDIO_MODEL, form.lmstudioModel),
         setSetting(SETTING_KEYS.REMINDER_ENABLED, String(form.reminderEnabled)),
         setSetting(SETTING_KEYS.REMINDER_TIME, form.reminderTime),
         setSetting(SETTING_KEYS.REMINDER_WEEKDAYS_ONLY, String(form.reminderWeekdaysOnly)),
@@ -290,126 +398,372 @@ export default function Settings() {
       {/* AI設定 */}
       <OrnateCard className="p-6">
         <div className="space-y-5">
-        <CardHeading>AI設定</CardHeading>
+          <CardHeading>AI設定</CardHeading>
 
-        {/* プロバイダー選択 */}
-        <div className="space-y-2">
-          <label className="block text-sm text-sebastian-gray font-serif">AIプロバイダー</label>
-          <div className="flex gap-2">
-            {([
-              { value: 'gemini', label: 'Gemini API', sub: '無料・高速・推奨' },
-              { value: 'ollama', label: 'Ollama', sub: 'ローカルLLM' },
-              { value: 'disabled', label: '無効', sub: 'AI機能をオフ' },
-            ] as const).map(opt => (
-              <button
-                key={opt.value}
-                onClick={() => setForm(f => ({ ...f, aiProvider: opt.value }))}
-                className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition-colors ${
-                  form.aiProvider === opt.value
-                    ? 'border-sebastian-gold/60 bg-sebastian-gold/5'
-                    : 'border-sebastian-border/50 hover:border-sebastian-border'
-                }`}
-              >
-                <p className={`text-sm font-serif font-medium ${form.aiProvider === opt.value ? 'text-sebastian-navy' : 'text-sebastian-gray'}`}>
-                  {opt.label}
+          {/* グローバルプロバイダー ドロップダウン */}
+          <div className="space-y-2">
+            <label className="block text-sm text-sebastian-gray font-serif">AIプロバイダー（グローバル）</label>
+            <select
+              className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-xl px-3 py-2.5 text-sm font-serif text-sebastian-text outline-none focus:border-sebastian-gold/50 transition-colors"
+              value={form.aiProvider}
+              onChange={e => setForm(f => ({ ...f, aiProvider: e.target.value as AiProvider }))}
+            >
+              <option value="gemini">Gemini API — 推奨・無料</option>
+              <option value="claude">Claude — Anthropic</option>
+              <option value="openai">OpenAI — GPT-4o 等</option>
+              <option value="groq">Groq — 高速推論</option>
+              <option value="openrouter">OpenRouter — 多モデル対応</option>
+              {customProviders.map(p => (
+                <option key={p.id} value={`custom:${p.id}`}>{p.name} — カスタム</option>
+              ))}
+              <option value="lmstudio">LM Studio — ローカル</option>
+              <option value="ollama">Ollama — ローカル</option>
+              <option value="disabled">無効 — AI機能をオフ</option>
+            </select>
+          </div>
+
+          {/* Gemini設定 */}
+          {form.aiProvider === 'gemini' && (
+            <div className="space-y-4 pt-1">
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">APIキー</label>
+                <div className="flex gap-2">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                    placeholder="AIzaSy..."
+                    value={form.geminiApiKey}
+                    onChange={e => setForm(f => ({ ...f, geminiApiKey: e.target.value }))}
+                  />
+                  <button
+                    onClick={() => setShowApiKey(v => !v)}
+                    className="px-3 text-sebastian-lightgray hover:text-gray-600 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg transition-colors"
+                  >
+                    {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                <p className="text-xs text-sebastian-lightgray">
+                  取得先: <span className="font-mono">https://aistudio.google.com/apikey</span>（無料）
                 </p>
-                <p className="text-xs text-sebastian-lightgray mt-0.5 font-serif">{opt.sub}</p>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">モデル</label>
+                <input
+                  type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                  value={form.geminiModel}
+                  onChange={e => setForm(f => ({ ...f, geminiModel: e.target.value }))}
+                />
+                <p className="text-xs text-sebastian-lightgray">
+                  推奨: <span className="font-mono">gemini-2.5-flash</span>（無料・高速）
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Claude設定 */}
+          {form.aiProvider === 'claude' && (
+            <div className="space-y-4 pt-1">
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">APIキー</label>
+                <div className="flex gap-2">
+                  <input type={showApiKey ? 'text' : 'password'}
+                    className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                    placeholder="sk-ant-..."
+                    value={form.claudeApiKey}
+                    onChange={e => setForm(f => ({ ...f, claudeApiKey: e.target.value }))} />
+                  <button onClick={() => setShowApiKey(v => !v)} className="px-3 text-sebastian-lightgray bg-sebastian-parchment/50 border border-sebastian-border rounded-lg">
+                    {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                <p className="text-xs text-sebastian-lightgray">取得先: <span className="font-mono">console.anthropic.com</span>（従量課金）</p>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">モデル</label>
+                <input type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                  value={form.claudeModel}
+                  onChange={e => setForm(f => ({ ...f, claudeModel: e.target.value }))} />
+                <p className="text-xs text-sebastian-lightgray">推奨: <span className="font-mono">claude-haiku-4-5-20251001</span>（軽量・安価）/ <span className="font-mono">claude-sonnet-4-6</span>（高精度）</p>
+              </div>
+            </div>
+          )}
+
+          {/* OpenAI設定 */}
+          {form.aiProvider === 'openai' && (
+            <div className="space-y-4 pt-1">
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">APIキー</label>
+                <div className="flex gap-2">
+                  <input type={showApiKey ? 'text' : 'password'}
+                    className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                    placeholder="sk-..."
+                    value={form.openaiApiKey}
+                    onChange={e => setForm(f => ({ ...f, openaiApiKey: e.target.value }))} />
+                  <button onClick={() => setShowApiKey(v => !v)} className="px-3 text-sebastian-lightgray bg-sebastian-parchment/50 border border-sebastian-border rounded-lg">
+                    {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                <p className="text-xs text-sebastian-lightgray">取得先: <span className="font-mono">platform.openai.com</span>（従量課金）</p>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">モデル</label>
+                <input type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                  value={form.openaiModel}
+                  onChange={e => setForm(f => ({ ...f, openaiModel: e.target.value }))} />
+                <p className="text-xs text-sebastian-lightgray">推奨: <span className="font-mono">gpt-4o-mini</span>（安価・高速）/ <span className="font-mono">gpt-4o</span>（高精度）</p>
+              </div>
+            </div>
+          )}
+
+          {/* Groq設定 */}
+          {form.aiProvider === 'groq' && (
+            <div className="space-y-4 pt-1">
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">APIキー</label>
+                <div className="flex gap-2">
+                  <input type={showApiKey ? 'text' : 'password'}
+                    className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                    placeholder="gsk_..."
+                    value={form.groqApiKey}
+                    onChange={e => setForm(f => ({ ...f, groqApiKey: e.target.value }))} />
+                  <button onClick={() => setShowApiKey(v => !v)} className="px-3 text-sebastian-lightgray bg-sebastian-parchment/50 border border-sebastian-border rounded-lg">
+                    {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                <p className="text-xs text-sebastian-lightgray">取得先: <span className="font-mono">console.groq.com</span>（無料枠あり）</p>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">モデル</label>
+                <input type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                  value={form.groqModel}
+                  onChange={e => setForm(f => ({ ...f, groqModel: e.target.value }))} />
+                <p className="text-xs text-sebastian-lightgray">推奨: <span className="font-mono">llama-3.3-70b-versatile</span>（高速・高精度）</p>
+              </div>
+            </div>
+          )}
+
+          {/* OpenRouter設定 */}
+          {form.aiProvider === 'openrouter' && (
+            <div className="space-y-4 pt-1">
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">APIキー</label>
+                <div className="flex gap-2">
+                  <input type={showApiKey ? 'text' : 'password'}
+                    className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                    placeholder="sk-or-..."
+                    value={form.openrouterApiKey}
+                    onChange={e => setForm(f => ({ ...f, openrouterApiKey: e.target.value }))} />
+                  <button onClick={() => setShowApiKey(v => !v)} className="px-3 text-sebastian-lightgray bg-sebastian-parchment/50 border border-sebastian-border rounded-lg">
+                    {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                <p className="text-xs text-sebastian-lightgray">取得先: <span className="font-mono">openrouter.ai</span>（無料枠あり・多モデル対応）</p>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">モデル</label>
+                <input type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                  value={form.openrouterModel}
+                  onChange={e => setForm(f => ({ ...f, openrouterModel: e.target.value }))} />
+                <p className="text-xs text-sebastian-lightgray">例: <span className="font-mono">google/gemini-flash-1.5</span> / <span className="font-mono">anthropic/claude-3.5-haiku</span></p>
+              </div>
+            </div>
+          )}
+
+          {/* LM Studio設定 */}
+          {form.aiProvider === 'lmstudio' && (
+            <div className="space-y-4 pt-1">
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">エンドポイントURL</label>
+                <input type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                  value={form.lmstudioEndpoint}
+                  onChange={e => setForm(f => ({ ...f, lmstudioEndpoint: e.target.value }))} />
+                <p className="text-xs text-sebastian-lightgray">LM Studio の「Local Server」タブで確認できます（通常 http://localhost:1234）</p>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">モデルID</label>
+                <input type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                  placeholder="例: local-model"
+                  value={form.lmstudioModel}
+                  onChange={e => setForm(f => ({ ...f, lmstudioModel: e.target.value }))} />
+              </div>
+            </div>
+          )}
+
+          {/* Ollama設定 */}
+          {form.aiProvider === 'ollama' && (
+            <div className="space-y-4 pt-1">
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">エンドポイントURL</label>
+                <input
+                  type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                  value={form.ollamaEndpoint}
+                  onChange={e => setForm(f => ({ ...f, ollamaEndpoint: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm text-sebastian-gray">モデル</label>
+                <input
+                  type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
+                  placeholder="例: qwen2.5:3b"
+                  value={form.ollamaModel}
+                  onChange={e => setForm(f => ({ ...f, ollamaModel: e.target.value }))}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 接続テスト */}
+          {form.aiProvider !== 'disabled' && (
+            <div className="space-y-2">
+              <button
+                onClick={handleTest}
+                disabled={testing}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-sebastian-text rounded-lg hover:bg-gray-200 transition-colors text-sm disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={testing ? 'animate-spin' : ''} />
+                {testing ? '確認中...' : '接続テスト'}
               </button>
+
+              {testStatus && (
+                <div className={`flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm ${
+                  testStatus.ok
+                    ? 'bg-green-50 text-green-700 border border-green-100'
+                    : 'bg-red-50 text-red-700 border border-red-100'
+                }`}>
+                  {testStatus.ok
+                    ? <Wifi size={15} className="flex-shrink-0 mt-0.5" />
+                    : <WifiOff size={15} className="flex-shrink-0 mt-0.5" />
+                  }
+                  {testStatus.msg}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </OrnateCard>
+
+      {/* カスタムプロバイダー */}
+      <OrnateCard className="p-6">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <CardHeading>カスタムプロバイダー</CardHeading>
+            <button
+              onClick={() => { setShowAddProvider(true); setEditingProvider(null); setProviderForm({ id: '', name: '', type: 'openai', endpoint: '', apiKey: '', model: '' }); }}
+              className="flex items-center gap-1.5 text-sm font-serif text-sebastian-gray hover:text-sebastian-navy transition-colors"
+            >
+              <Plus size={14} />
+              追加
+            </button>
+          </div>
+          <p className="text-xs text-sebastian-lightgray font-serif">
+            任意のOpenAI互換・Claude互換エンドポイントを登録できます。APIキーは現在平文保存されます。
+          </p>
+
+          {customProviders.length === 0 && !showAddProvider && (
+            <p className="text-xs text-sebastian-lightgray italic font-serif">登録済みのカスタムプロバイダーはありません</p>
+          )}
+
+          <div className="space-y-2">
+            {customProviders.map(p => (
+              <div key={p.id} className="flex items-center justify-between rounded-xl border border-sebastian-border/60 px-4 py-3 bg-white/50">
+                <div>
+                  <p className="text-sm font-serif font-medium text-sebastian-text">{p.name}</p>
+                  <p className="text-xs font-mono text-sebastian-lightgray mt-0.5">{p.endpoint}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs px-2 py-0.5 rounded border border-sebastian-border/60 text-sebastian-lightgray font-serif">
+                    {p.type === 'openai' ? 'OpenAI互換' : 'Claude互換'}
+                  </span>
+                  <button onClick={() => { setEditingProvider(p); setProviderForm({ id: p.id, name: p.name, type: p.type, endpoint: p.endpoint, apiKey: p.api_key ?? '', model: p.model }); setShowAddProvider(true); }}
+                    className="text-sebastian-lightgray hover:text-sebastian-gold transition-colors"><Pencil size={14} /></button>
+                  <button onClick={() => deleteCustomProvider(p.id)}
+                    className="text-sebastian-lightgray hover:text-red-400 transition-colors"><Trash2 size={14} /></button>
+                </div>
+              </div>
             ))}
           </div>
-        </div>
 
-        {/* Gemini設定 */}
-        {form.aiProvider === 'gemini' && (
-          <div className="space-y-4 pt-1">
-            <div className="space-y-2">
-              <label className="block text-sm text-sebastian-gray">APIキー</label>
-              <div className="flex gap-2">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
-                  placeholder="AIzaSy..."
-                  value={form.geminiApiKey}
-                  onChange={e => setForm(f => ({ ...f, geminiApiKey: e.target.value }))}
-                />
-                <button
-                  onClick={() => setShowApiKey(v => !v)}
-                  className="px-3 text-sebastian-lightgray hover:text-gray-600 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg transition-colors"
-                >
-                  {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+          {/* Add/Edit form */}
+          {showAddProvider && (
+            <div className="rounded-xl border border-sebastian-gold/30 p-5 space-y-4" style={{ backgroundColor: 'rgba(201,164,86,0.04)' }}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-serif text-sebastian-navy">{editingProvider ? 'プロバイダーを編集' : '新しいプロバイダーを追加'}</h3>
+                <button onClick={() => { setShowAddProvider(false); setEditingProvider(null); }} className="text-sebastian-lightgray hover:text-sebastian-gray"><X size={16} /></button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs text-sebastian-gray font-serif">ID（英数字・ハイフン）</label>
+                  <input type="text"
+                    className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50"
+                    placeholder="my-provider"
+                    disabled={!!editingProvider}
+                    value={providerForm.id}
+                    onChange={e => setProviderForm(f => ({ ...f, id: e.target.value.replace(/[^a-z0-9-]/g, '') }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-sebastian-gray font-serif">表示名</label>
+                  <input type="text"
+                    className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-serif outline-none focus:border-sebastian-gold/50"
+                    placeholder="My Custom Provider"
+                    value={providerForm.name}
+                    onChange={e => setProviderForm(f => ({ ...f, name: e.target.value }))} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-sebastian-gray font-serif">タイプ</label>
+                <select
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-serif outline-none focus:border-sebastian-gold/50"
+                  value={providerForm.type}
+                  onChange={e => setProviderForm(f => ({ ...f, type: e.target.value }))}>
+                  <option value="openai">OpenAI互換（/v1/chat/completions）</option>
+                  <option value="claude">Claude互換（/v1/messages）</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-sebastian-gray font-serif">エンドポイントURL</label>
+                <input type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50"
+                  placeholder="https://example.com/api"
+                  value={providerForm.endpoint}
+                  onChange={e => setProviderForm(f => ({ ...f, endpoint: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-sebastian-gray font-serif">APIキー（省略可）</label>
+                <input type="password"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50"
+                  placeholder="sk-..."
+                  value={providerForm.apiKey}
+                  onChange={e => setProviderForm(f => ({ ...f, apiKey: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-sebastian-gray font-serif">モデルID</label>
+                <input type="text"
+                  className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50"
+                  placeholder="model-name-here"
+                  value={providerForm.model}
+                  onChange={e => setProviderForm(f => ({ ...f, model: e.target.value }))} />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={saveCustomProvider}
+                  className="px-5 py-2 rounded-lg text-sm font-serif transition-colors"
+                  style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}>
+                  保存
+                </button>
+                <button onClick={() => { setShowAddProvider(false); setEditingProvider(null); }}
+                  className="px-5 py-2 rounded-lg text-sm font-serif border border-sebastian-border/50 text-sebastian-gray hover:bg-sebastian-border/20 transition-colors">
+                  キャンセル
                 </button>
               </div>
-              <p className="text-xs text-sebastian-lightgray">
-                取得先: <span className="font-mono">https://aistudio.google.com/apikey</span>（無料）
-              </p>
             </div>
-            <div className="space-y-2">
-              <label className="block text-sm text-sebastian-gray">モデル</label>
-              <input
-                type="text"
-                className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
-                value={form.geminiModel}
-                onChange={e => setForm(f => ({ ...f, geminiModel: e.target.value }))}
-              />
-              <p className="text-xs text-sebastian-lightgray">
-                推奨: <span className="font-mono">gemini-2.5-flash</span>（無料・高速）
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Ollama設定 */}
-        {form.aiProvider === 'ollama' && (
-          <div className="space-y-4 pt-1">
-            <div className="space-y-2">
-              <label className="block text-sm text-sebastian-gray">エンドポイントURL</label>
-              <input
-                type="text"
-                className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
-                value={form.ollamaEndpoint}
-                onChange={e => setForm(f => ({ ...f, ollamaEndpoint: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="block text-sm text-sebastian-gray">モデル</label>
-              <input
-                type="text"
-                className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-sebastian-gold/50 transition-colors"
-                placeholder="例: qwen2.5:3b"
-                value={form.ollamaModel}
-                onChange={e => setForm(f => ({ ...f, ollamaModel: e.target.value }))}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* 接続テスト */}
-        {form.aiProvider !== 'disabled' && (
-          <div className="space-y-2">
-            <button
-              onClick={handleTest}
-              disabled={testing}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-sebastian-text rounded-lg hover:bg-gray-200 transition-colors text-sm disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={testing ? 'animate-spin' : ''} />
-              {testing ? '確認中...' : '接続テスト'}
-            </button>
-
-            {testStatus && (
-              <div className={`flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm ${
-                testStatus.ok
-                  ? 'bg-green-50 text-green-700 border border-green-100'
-                  : 'bg-red-50 text-red-700 border border-red-100'
-              }`}>
-                {testStatus.ok
-                  ? <Wifi size={15} className="flex-shrink-0 mt-0.5" />
-                  : <WifiOff size={15} className="flex-shrink-0 mt-0.5" />
-                }
-                {testStatus.msg}
-              </div>
-            )}
-          </div>
-        )}
+          )}
         </div>
       </OrnateCard>
 

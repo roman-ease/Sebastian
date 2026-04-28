@@ -1,9 +1,19 @@
 // AI呼び出しレイヤー
-// プロバイダー: Gemini API / Ollama / 無効
+// プロバイダー: Gemini API / Claude / OpenAI / Groq / OpenRouter / LM Studio / Ollama / 無効
 // 設定画面でプロバイダーを切り替えられます。
 
 import { getSetting, SETTING_KEYS } from './settings';
+import { selectDb } from './db';
 import { STATUS_LABEL, PRIORITY_LABEL } from './constants';
+
+interface CustomProvider {
+  id: string;
+  name: string;
+  type: string;
+  endpoint: string;
+  api_key: string | null;
+  model: string;
+}
 
 export interface TaskLogEntry {
   task_id: number;
@@ -98,6 +108,124 @@ async function callOllama(systemPrompt: string, userMessage: string): Promise<st
   return content.trim();
 }
 
+// ─── OpenAI互換 ────────────────────────────────────────────────
+
+async function callOpenAICompatible(
+  endpoint: string,
+  apiKey: string | null,
+  model: string,
+  systemPrompt: string,
+  userMessage: string
+): Promise<string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+  const res = await fetch(`${endpoint}/v1/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userMessage },
+      ],
+      temperature: 0.3,
+      max_tokens: 8192,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(`エラー (${res.status}): ${body?.error?.message ?? res.statusText}`);
+  }
+  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('応答が空です');
+  return text.trim();
+}
+
+async function callClaude(systemPrompt: string, userMessage: string): Promise<string> {
+  const apiKey = await getSetting(SETTING_KEYS.CLAUDE_API_KEY);
+  const model  = (await getSetting(SETTING_KEYS.CLAUDE_MODEL)) ?? 'claude-haiku-4-5-20251001';
+  if (!apiKey) throw new Error('Claude APIキーが設定されていません。設定画面から入力してください。');
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(`Claude エラー (${res.status}): ${body?.error?.message ?? res.statusText}`);
+  }
+  const data = await res.json() as { content?: { type: string; text?: string }[] };
+  const text = data.content?.find(c => c.type === 'text')?.text;
+  if (!text) throw new Error('Claude からの応答が空です');
+  return text.trim();
+}
+
+async function callOpenAI(systemPrompt: string, userMessage: string): Promise<string> {
+  const apiKey = await getSetting(SETTING_KEYS.OPENAI_API_KEY);
+  const model  = (await getSetting(SETTING_KEYS.OPENAI_MODEL)) ?? 'gpt-4o-mini';
+  if (!apiKey) throw new Error('OpenAI APIキーが設定されていません。設定画面から入力してください。');
+  return callOpenAICompatible('https://api.openai.com', apiKey, model, systemPrompt, userMessage);
+}
+
+async function callGroq(systemPrompt: string, userMessage: string): Promise<string> {
+  const apiKey = await getSetting(SETTING_KEYS.GROQ_API_KEY);
+  const model  = (await getSetting(SETTING_KEYS.GROQ_MODEL)) ?? 'llama-3.3-70b-versatile';
+  if (!apiKey) throw new Error('Groq APIキーが設定されていません。設定画面から入力してください。');
+  return callOpenAICompatible('https://api.groq.com/openai', apiKey, model, systemPrompt, userMessage);
+}
+
+async function callOpenRouter(systemPrompt: string, userMessage: string): Promise<string> {
+  const apiKey = await getSetting(SETTING_KEYS.OPENROUTER_API_KEY);
+  const model  = (await getSetting(SETTING_KEYS.OPENROUTER_MODEL)) ?? 'google/gemini-flash-1.5';
+  if (!apiKey) throw new Error('OpenRouter APIキーが設定されていません。設定画面から入力してください。');
+  return callOpenAICompatible('https://openrouter.ai/api', apiKey, model, systemPrompt, userMessage);
+}
+
+async function callLMStudio(systemPrompt: string, userMessage: string): Promise<string> {
+  const endpoint = (await getSetting(SETTING_KEYS.LMSTUDIO_ENDPOINT)) ?? 'http://localhost:1234';
+  const model    = (await getSetting(SETTING_KEYS.LMSTUDIO_MODEL)) ?? 'local-model';
+  return callOpenAICompatible(endpoint, null, model, systemPrompt, userMessage);
+}
+
+async function callCustomProvider(customId: string, systemPrompt: string, userMessage: string): Promise<string> {
+  const providers = await selectDb<CustomProvider>('SELECT * FROM custom_providers WHERE id = ?', [customId]);
+  const p = providers[0];
+  if (!p) throw new Error(`カスタムプロバイダー "${customId}" が見つかりません`);
+
+  if (p.type === 'openai') {
+    return callOpenAICompatible(p.endpoint, p.api_key || null, p.model, systemPrompt, userMessage);
+  } else if (p.type === 'claude') {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' };
+    if (p.api_key) headers['x-api-key'] = p.api_key;
+    const res = await fetch(`${p.endpoint}/v1/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model: p.model, max_tokens: 8192, system: systemPrompt, messages: [{ role: 'user', content: userMessage }] }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) throw new Error(`エラー (${res.status})`);
+    const data = await res.json() as { content?: { type: string; text?: string }[] };
+    return data.content?.find(c => c.type === 'text')?.text?.trim() ?? '';
+  }
+  throw new Error(`未対応のタイプ: ${p.type}`);
+}
+
 // ─── Gemini API ────────────────────────────────────────────────
 
 const GEMINI_RETRY_DELAYS = [3000, 8000]; // ms
@@ -186,12 +314,18 @@ async function callAI(systemPrompt: string, userMessage: string): Promise<string
   const provider = (await getSetting(SETTING_KEYS.AI_PROVIDER)) ?? 'disabled';
 
   switch (provider) {
-    case 'gemini':
-      return callGemini(systemPrompt, userMessage);
-    case 'ollama':
-      return callOllama(systemPrompt, userMessage);
+    case 'gemini':     return callGemini(systemPrompt, userMessage);
+    case 'claude':     return callClaude(systemPrompt, userMessage);
+    case 'openai':     return callOpenAI(systemPrompt, userMessage);
+    case 'groq':       return callGroq(systemPrompt, userMessage);
+    case 'openrouter': return callOpenRouter(systemPrompt, userMessage);
+    case 'lmstudio':   return callLMStudio(systemPrompt, userMessage);
+    case 'ollama':     return callOllama(systemPrompt, userMessage);
     default:
-      throw new Error('AIプロバイダーが設定されていません。設定画面からGeminiまたはOllamaを選択してください。');
+      if (provider.startsWith('custom:')) {
+        return callCustomProvider(provider.slice('custom:'.length), systemPrompt, userMessage);
+      }
+      throw new Error('AIプロバイダーが設定されていません。設定画面から選択してください。');
   }
 }
 
@@ -439,6 +573,11 @@ async function callAIForJson(systemPrompt: string, userMessage: string): Promise
     const data = await res.json() as { message?: { content: string } };
     const raw = data.message?.content ?? '{"candidates":[]}';
     return cleanJsonResponse(raw);
+  }
+
+  if (provider !== 'disabled') {
+    // Claude, OpenAI, Groq, OpenRouter, LMStudio, custom — use regular text mode
+    return callAI(systemPrompt, userMessage);
   }
 
   throw new Error('AIプロバイダーが設定されていません');

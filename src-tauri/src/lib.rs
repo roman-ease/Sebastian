@@ -161,6 +161,22 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "create_custom_providers",
+            sql: "
+            CREATE TABLE IF NOT EXISTS custom_providers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL DEFAULT 'openai',
+                endpoint TEXT NOT NULL,
+                api_key TEXT,
+                model TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
