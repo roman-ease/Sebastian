@@ -54,6 +54,20 @@
 - **AI進捗コメント**: 進捗率・チェックリスト状況をもとにセバスチャンが執事口調で一言
 - **チェックリスト連動**: チェック完了数から進捗率をワンクリックで算出・反映
 
+### AI プロバイダー
+設定画面でプロバイダーをいつでも切り替え可能。
+
+| プロバイダー | 種別 | 特徴 |
+|---|---|---|
+| **Gemini API** | クラウド | 推奨・無料枠あり |
+| **Claude**（Anthropic） | クラウド | 高精度・長文対応 |
+| **OpenAI** | クラウド | GPT-4o 等 |
+| **Groq** | クラウド | 無料枠あり・超高速推論 |
+| **OpenRouter** | クラウド | 多モデル対応・無料枠あり |
+| **LM Studio** | ローカル | OpenAI互換 GUI ツール |
+| **Ollama** | ローカル | CLI ベースのローカルLLM |
+| **カスタム** | 任意 | OpenAI互換 / Claude互換 エンドポイントを自由登録 |
+
 ### 検索
 - **グローバル検索**（`/search`）でタスク・メモ・日報を横断検索
 - 300msデバウンスでリアルタイム絞り込み
@@ -112,7 +126,7 @@
 | 言語 | TypeScript / Rust |
 | UI | Tailwind CSS v4 |
 | DB | SQLite（`tauri-plugin-sql`） |
-| AI | Gemini API（`gemini-2.0-flash` 推奨）/ Ollama（ローカルLLM）|
+| AI | Gemini / Claude / OpenAI / Groq / OpenRouter / Ollama / LM Studio / カスタム |
 | ビルドツール | Vite |
 
 ---
@@ -142,18 +156,25 @@ npm run tauri build
 
 アプリ起動後、**設定 → AI設定** から使用するプロバイダーを選択してください。
 
-**Gemini API（推奨）**
+**Gemini API（推奨・無料）**
 1. [Google AI Studio](https://aistudio.google.com/apikey) で無料APIキーを取得
 2. 設定画面でAPIキーとモデル（`gemini-2.0-flash`）を入力
+
+**Claude / OpenAI / Groq / OpenRouter（クラウド）**
+1. 各サービスのコンソールでAPIキーを取得
+2. 設定画面でプロバイダーを選択し、APIキーとモデルIDを入力
+
+**Ollama / LM Studio（ローカルLLM）**
+1. [Ollama](https://ollama.com) または [LM Studio](https://lmstudio.ai) をインストール
+2. モデルをダウンロード（例: `ollama pull qwen2.5:7b`）
+3. 設定画面でエンドポイントURLとモデル名を入力
+
+**カスタムプロバイダー**
+- 設定画面の「カスタムプロバイダー」セクションから OpenAI互換 / Claude互換 エンドポイントを自由に登録できます
 
 > ⚠️ **APIキーの取り扱いについて**
 > APIキーはローカルDBに平文で保存されます。
 > 共有PCや管理外端末への導入は推奨しません。
-
-**Ollama（ローカルLLM）**
-1. [Ollama](https://ollama.com) をインストール
-2. モデルをプル（例: `ollama pull qwen2.5:3b`）
-3. 設定画面でエンドポイントとモデル名を入力
 
 ---
 
@@ -199,12 +220,18 @@ npm run tauri build
 - スパンバー・単日チップに進捗率・チェックリスト達成数（x/n）を表示
 - 列ラッパー方式によるグリッドレイアウトの刷新（行境界の不要ラインを完全除去）
 
+#### AI プロバイダー拡張
+- **Claude / OpenAI / Groq / OpenRouter / LM Studio** を新規追加（計8プロバイダー）
+- **カスタムプロバイダー**: OpenAI互換・Claude互換エンドポイントを DB 登録・管理
+- `callOpenAICompatible()` ヘルパーで複数プロバイダーを統一処理
+- **DB Migration 8**: `custom_providers` テーブルを追加
+
 #### その他
 - **グローバル検索**: タスク・メモ・日報を横断検索（サイドバーから `/search` へ）
 - **ダッシュボード**: 各タスクに進捗率バー・チェックリスト達成数を表示
 - **朝のブリーフィング**: 各タスクに進捗率・チェックリスト状況を表示
 - **メモ**: 過去日・翌日ナビゲーションを追加
-- **DB Migration 5〜7**: `start_date` / `progress` / `task_checklist` テーブルを追加
+- **DB Migration 5〜8**: `start_date` / `progress` / `task_checklist` / `custom_providers` を追加
 
 ---
 
