@@ -29,11 +29,16 @@ src-tauri/target/
 # Generated report files (user data)
 Report/
 
-# Claude Code session data
+# Claude Code — セッションデータ・プロジェクト指示書
 .claude/
+CLAUDE.md
 
-# Internal handoff / transfer documents
+# 内部ドキュメント（公開不要）
 HANDOFF.md
+CHANGELOG.md
+
+# 誤作成ファイル
+src-tauri/2
 
 # Project docs (not for version control)
 docs/
