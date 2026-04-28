@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp, Pin, PinOff, Search, X, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp, Pin, PinOff, Search, X, ArrowUp, ArrowDown, Check } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
 import { logTaskAction } from '../lib/taskLogs';
 import { TaskModal, type TaskFormData, type TaskStatus, type TaskPriority } from '../components/TaskModal';
@@ -10,10 +10,15 @@ interface Task {
   id: number;
   title: string;
   description: string | null;
+  notes: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  start_date: string | null;
   due_date: string | null;
   category: string | null;
+  progress: number;
+  checklist_total: number;
+  checklist_done: number;
   archived: number;
   pinned: number;
   created_at: string;
@@ -75,14 +80,21 @@ export default function Tasks() {
   const [archivingId, setArchivingId] = useState<number | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const loadTasks = async () => {
     const [active, archived] = await Promise.all([
       selectDb<Task>(
-        'SELECT id, title, description, status, priority, due_date, category, archived, pinned, created_at, updated_at FROM tasks WHERE archived = 0'
+        `SELECT tasks.id, title, description, notes, status, priority, start_date, due_date, category, progress, archived, pinned, created_at, updated_at,
+          (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+          (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+         FROM tasks WHERE archived = 0`
       ),
       selectDb<Task>(
-        'SELECT id, title, description, status, priority, due_date, category, archived, pinned, created_at, updated_at FROM tasks WHERE archived = 1 ORDER BY updated_at DESC'
+        `SELECT tasks.id, title, description, notes, status, priority, start_date, due_date, category, progress, archived, pinned, created_at, updated_at,
+          (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+          (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+         FROM tasks WHERE archived = 1 ORDER BY updated_at DESC`
       ),
     ]);
     setTasks(active);
@@ -153,8 +165,8 @@ export default function Tasks() {
     setErrorMsg('');
     try {
       const result = await executeDb(
-        'INSERT INTO tasks (title, description, status, priority, due_date, category) VALUES (?, ?, ?, ?, ?, ?)',
-        [data.title, data.description || null, data.status, data.priority, data.due_date || null, data.category || null]
+        'INSERT INTO tasks (title, description, notes, status, priority, start_date, due_date, category, progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [data.title, data.description || null, data.notes || null, data.status, data.priority, data.start_date || null, data.due_date || null, data.category || null, data.progress]
       );
       await logTaskAction({
         taskId: result.lastInsertId as number,
@@ -175,8 +187,8 @@ export default function Tasks() {
     setErrorMsg('');
     try {
       await executeDb(
-        'UPDATE tasks SET title=?, description=?, status=?, priority=?, due_date=?, category=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-        [data.title, data.description || null, data.status, data.priority, data.due_date || null, data.category || null, editingTask.id]
+        'UPDATE tasks SET title=?, description=?, notes=?, status=?, priority=?, start_date=?, due_date=?, category=?, progress=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        [data.title, data.description || null, data.notes || null, data.status, data.priority, data.start_date || null, data.due_date || null, data.category || null, data.progress, editingTask.id]
       );
       await logTaskAction({
         taskId: editingTask.id,
@@ -278,6 +290,7 @@ export default function Tasks() {
   const handleDelete = async (id: number) => {
     const task = tasks.find(t => t.id === id) ?? archivedTasks.find(t => t.id === id);
     try {
+      await executeDb('DELETE FROM task_checklist WHERE task_id=?', [id]);
       await executeDb('DELETE FROM tasks WHERE id=?', [id]);
       await logTaskAction({
         taskId: id,
@@ -297,6 +310,32 @@ export default function Tasks() {
   const openEdit = (task: Task) => {
     setEditingTask(task);
     setModalMode('edit');
+  };
+
+  const toggleSelection = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkStatusChange = async (status: string) => {
+    if (!status || selectedIds.size === 0) return;
+    await Promise.all([...selectedIds].map(id =>
+      executeDb('UPDATE tasks SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', [status, id])
+    ));
+    setSelectedIds(new Set());
+    loadTasks();
+  };
+
+  const handleBulkArchive = async () => {
+    if (selectedIds.size === 0) return;
+    await Promise.all([...selectedIds].map(id =>
+      executeDb('UPDATE tasks SET archived=1, updated_at=CURRENT_TIMESTAMP WHERE id=?', [id])
+    ));
+    setSelectedIds(new Set());
+    loadTasks();
   };
 
   const hasActiveFilters = searchQuery.trim() !== '' || categoryFilter !== '';
@@ -441,6 +480,15 @@ export default function Tasks() {
           <ul className="divide-y divide-sebastian-border/40">
             {filteredTasks.map(task => (
               <li key={task.id} className="flex items-center gap-3 px-5 py-4 hover:bg-sebastian-parchment/30 transition-colors group">
+                {/* 一括選択チェックボックス */}
+                <div
+                  className={`flex-shrink-0 cursor-pointer transition-opacity ${selectedIds.size > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                  onClick={e => { e.stopPropagation(); toggleSelection(task.id); }}
+                >
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedIds.has(task.id) ? 'border-sebastian-gold/60 bg-sebastian-gold/10' : 'border-sebastian-border'}`}>
+                    {selectedIds.has(task.id) && <Check size={10} className="text-sebastian-gold" />}
+                  </div>
+                </div>
                 {/* ステータスアイコン（クリックで完了/未着手トグル） */}
                 <button
                   onClick={() => handleToggleStatus(task)}
@@ -468,9 +516,30 @@ export default function Tasks() {
                         {task.category}
                       </button>
                     )}
-                    {task.due_date && (
+                    {(task.start_date || task.due_date) && (
                       <span className="text-xs text-sebastian-lightgray/80 font-serif">
-                        期日: {format(new Date(task.due_date + 'T00:00:00'), 'M/d')}
+                        {task.start_date && task.due_date && task.start_date !== task.due_date
+                          ? `${format(new Date(task.start_date + 'T00:00:00'), 'M/d')} 〜 ${format(new Date(task.due_date + 'T00:00:00'), 'M/d')}`
+                          : task.due_date
+                            ? `終了: ${format(new Date(task.due_date + 'T00:00:00'), 'M/d')}`
+                            : `開始: ${format(new Date(task.start_date! + 'T00:00:00'), 'M/d')}`
+                        }
+                      </span>
+                    )}
+                    {task.progress > 0 && (
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block w-12 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(201,164,86,0.15)' }}>
+                          <span
+                            className="block h-full rounded-full"
+                            style={{ width: `${task.progress}%`, backgroundColor: 'rgba(201,164,86,0.7)' }}
+                          />
+                        </span>
+                        <span className="text-xs text-sebastian-lightgray/80 font-serif">{task.progress}%</span>
+                      </span>
+                    )}
+                    {task.checklist_total > 0 && (
+                      <span className="text-xs text-sebastian-lightgray/70 font-serif">
+                        ☑ {task.checklist_done}/{task.checklist_total}
                       </span>
                     )}
                     {task.description && (
@@ -580,9 +649,14 @@ export default function Tasks() {
                         {task.category && (
                           <span className="text-xs text-sebastian-lightgray/70 font-serif">{task.category}</span>
                         )}
-                        {task.due_date && (
+                        {(task.start_date || task.due_date) && (
                           <span className="text-xs text-sebastian-lightgray/70 font-serif">
-                            期日: {format(new Date(task.due_date + 'T00:00:00'), 'M/d')}
+                            {task.start_date && task.due_date && task.start_date !== task.due_date
+                              ? `${format(new Date(task.start_date + 'T00:00:00'), 'M/d')} 〜 ${format(new Date(task.due_date + 'T00:00:00'), 'M/d')}`
+                              : task.due_date
+                                ? format(new Date(task.due_date + 'T00:00:00'), 'M/d')
+                                : format(new Date(task.start_date! + 'T00:00:00'), 'M/d')
+                            }
                           </span>
                         )}
                       </div>
@@ -630,6 +704,35 @@ export default function Tasks() {
         </div>
       )}
 
+      {/* 一括操作バー */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
+          <div className="flex items-center gap-4 rounded-xl shadow-2xl px-5 py-3" style={{ backgroundColor: '#131929', border: '1px solid rgba(201,164,86,0.3)' }}>
+            <span className="text-sm font-serif" style={{ color: '#d4c9a8' }}>{selectedIds.size}件選択</span>
+            <div className="w-px h-4 bg-white/10" />
+            <select
+              className="text-sm font-serif bg-transparent outline-none cursor-pointer"
+              style={{ color: '#d4c9a8' }}
+              value=""
+              onChange={e => { if (e.target.value) { handleBulkStatusChange(e.target.value); (e.target as HTMLSelectElement).value = ''; } }}
+            >
+              <option value="" disabled>ステータス変更</option>
+              <option value="todo">未着手</option>
+              <option value="in_progress">進行中</option>
+              <option value="done">完了</option>
+              <option value="hold">保留</option>
+            </select>
+            <button onClick={handleBulkArchive} className="flex items-center gap-1.5 text-sm font-serif hover:text-white transition-colors" style={{ color: '#d4c9a8' }}>
+              <Archive size={14} />
+              アーカイブ
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="hover:opacity-100 transition-colors" style={{ color: 'rgba(201,164,86,0.7)' }}>
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* モーダル */}
       {modalMode === 'create' && (
         <TaskModal
@@ -641,13 +744,17 @@ export default function Tasks() {
       {modalMode === 'edit' && editingTask && (
         <TaskModal
           mode="edit"
+          taskId={editingTask.id}
           initialData={{
             title: editingTask.title,
             description: editingTask.description ?? '',
+            notes: editingTask.notes ?? '',
             status: editingTask.status,
             priority: editingTask.priority,
+            start_date: editingTask.start_date ?? '',
             due_date: editingTask.due_date ?? '',
             category: editingTask.category ?? '',
+            progress: editingTask.progress,
           }}
           onSave={handleEdit}
           onClose={() => { setModalMode(null); setEditingTask(null); }}

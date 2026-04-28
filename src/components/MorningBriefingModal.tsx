@@ -12,6 +12,9 @@ interface TaskBrief {
   priority: string;
   due_date: string | null;
   status: string;
+  progress: number;
+  checklist_total: number;
+  checklist_done: number;
 }
 
 interface Props {
@@ -32,15 +35,24 @@ export function MorningBriefingModal({ onDismiss }: Props) {
     async function load() {
       const [todayResult, soonResult, highResult] = await Promise.all([
         selectDb<TaskBrief>(
-          "SELECT id, title, priority, due_date, status FROM tasks WHERE due_date = ? AND status != 'done' ORDER BY priority DESC",
+          `SELECT id, title, priority, due_date, status, progress,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+           FROM tasks WHERE due_date = ? AND status != 'done' ORDER BY priority DESC`,
           [today]
         ),
         selectDb<TaskBrief>(
-          "SELECT id, title, priority, due_date, status FROM tasks WHERE due_date >= ? AND due_date <= ? AND status != 'done' ORDER BY due_date ASC, priority DESC LIMIT 5",
+          `SELECT id, title, priority, due_date, status, progress,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+           FROM tasks WHERE due_date >= ? AND due_date <= ? AND status != 'done' ORDER BY due_date ASC, priority DESC LIMIT 5`,
           [tomorrow, in3days]
         ),
         selectDb<TaskBrief>(
-          "SELECT id, title, priority, due_date, status FROM tasks WHERE priority = 'high' AND status != 'done' ORDER BY due_date ASC NULLS LAST LIMIT 5"
+          `SELECT id, title, priority, due_date, status, progress,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+           FROM tasks WHERE priority = 'high' AND status != 'done' ORDER BY due_date ASC NULLS LAST LIMIT 5`
         ),
       ]);
       setTodayTasks(todayResult);
@@ -101,11 +113,24 @@ export function MorningBriefingModal({ onDismiss }: Props) {
               </div>
               <ul className="space-y-2">
                 {todayTasks.map(t => (
-                  <li key={t.id} className="flex items-center gap-2 text-sm text-sebastian-text font-serif">
-                    <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
-                      {PRIORITY_LABEL[t.priority] || '—'}
-                    </span>
-                    <span className="flex-1 min-w-0 truncate">{t.title}</span>
+                  <li key={t.id} className="text-sm text-sebastian-text font-serif">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
+                        {PRIORITY_LABEL[t.priority] || '—'}
+                      </span>
+                      <span className="flex-1 min-w-0 truncate">{t.title}</span>
+                      {t.checklist_total > 0 && (
+                        <span className="text-xs text-sebastian-lightgray shrink-0 font-serif">☑{t.checklist_done}/{t.checklist_total}</span>
+                      )}
+                    </div>
+                    {t.progress > 0 && (
+                      <div className="flex items-center gap-2 mt-1 pl-7">
+                        <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(201,164,86,0.15)' }}>
+                          <div className="h-full rounded-full" style={{ width: `${t.progress}%`, backgroundColor: 'rgba(201,164,86,0.65)' }} />
+                        </div>
+                        <span className="text-[10px] text-sebastian-lightgray font-serif">{t.progress}%</span>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -121,15 +146,28 @@ export function MorningBriefingModal({ onDismiss }: Props) {
               </div>
               <ul className="space-y-2">
                 {soonTasks.map(t => (
-                  <li key={t.id} className="flex items-center gap-2 text-sm text-sebastian-text font-serif">
-                    <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
-                      {PRIORITY_LABEL[t.priority] || '—'}
-                    </span>
-                    <span className="flex-1 min-w-0 truncate">{t.title}</span>
-                    {t.due_date && (
-                      <span className="text-xs text-sebastian-lightgray flex-shrink-0 font-serif">
-                        {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
+                  <li key={t.id} className="text-sm text-sebastian-text font-serif">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
+                        {PRIORITY_LABEL[t.priority] || '—'}
                       </span>
+                      <span className="flex-1 min-w-0 truncate">{t.title}</span>
+                      {t.checklist_total > 0 && (
+                        <span className="text-xs text-sebastian-lightgray shrink-0 font-serif">☑{t.checklist_done}/{t.checklist_total}</span>
+                      )}
+                      {t.due_date && (
+                        <span className="text-xs text-sebastian-lightgray flex-shrink-0 font-serif">
+                          {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
+                        </span>
+                      )}
+                    </div>
+                    {t.progress > 0 && (
+                      <div className="flex items-center gap-2 mt-1 pl-7">
+                        <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(201,164,86,0.15)' }}>
+                          <div className="h-full rounded-full" style={{ width: `${t.progress}%`, backgroundColor: 'rgba(201,164,86,0.65)' }} />
+                        </div>
+                        <span className="text-[10px] text-sebastian-lightgray font-serif">{t.progress}%</span>
+                      </div>
                     )}
                   </li>
                 ))}
@@ -146,13 +184,26 @@ export function MorningBriefingModal({ onDismiss }: Props) {
               </div>
               <ul className="space-y-2">
                 {highTasks.map(t => (
-                  <li key={t.id} className="flex items-center gap-2 text-sm text-sebastian-text font-serif">
-                    <span className="w-1.5 h-1.5 rounded-full bg-sebastian-gold/60 flex-shrink-0" />
-                    <span className="flex-1 min-w-0 truncate">{t.title}</span>
-                    {t.due_date && (
-                      <span className="text-xs text-sebastian-lightgray flex-shrink-0 font-serif">
-                        {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
-                      </span>
+                  <li key={t.id} className="text-sm text-sebastian-text font-serif">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-sebastian-gold/60 flex-shrink-0" />
+                      <span className="flex-1 min-w-0 truncate">{t.title}</span>
+                      {t.checklist_total > 0 && (
+                        <span className="text-xs text-sebastian-lightgray shrink-0 font-serif">☑{t.checklist_done}/{t.checklist_total}</span>
+                      )}
+                      {t.due_date && (
+                        <span className="text-xs text-sebastian-lightgray flex-shrink-0 font-serif">
+                          {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
+                        </span>
+                      )}
+                    </div>
+                    {t.progress > 0 && (
+                      <div className="flex items-center gap-2 mt-1 pl-7">
+                        <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(201,164,86,0.15)' }}>
+                          <div className="h-full rounded-full" style={{ width: `${t.progress}%`, backgroundColor: 'rgba(201,164,86,0.65)' }} />
+                        </div>
+                        <span className="text-[10px] text-sebastian-lightgray font-serif">{t.progress}%</span>
+                      </div>
                     )}
                   </li>
                 ))}

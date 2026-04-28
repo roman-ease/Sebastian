@@ -16,6 +16,9 @@ interface TaskSummary {
   status: string;
   priority: string;
   due_date: string | null;
+  progress: number;
+  checklist_total: number;
+  checklist_done: number;
 }
 
 interface CategorySummary {
@@ -51,18 +54,27 @@ export default function Dashboard() {
             [today]
           ),
           selectDb<TaskSummary>(
-            "SELECT id, title, status, priority, due_date FROM tasks WHERE due_date = ? AND status != 'done' AND archived = 0 ORDER BY priority DESC",
+            `SELECT id, title, status, priority, due_date, progress,
+              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+             FROM tasks WHERE due_date = ? AND status != 'done' AND archived = 0 ORDER BY priority DESC`,
             [today]
           ),
           selectDb<TaskSummary>(
-            "SELECT id, title, status, priority, due_date FROM tasks WHERE priority = 'high' AND status != 'done' AND archived = 0 ORDER BY created_at DESC LIMIT 5",
+            `SELECT id, title, status, priority, due_date, progress,
+              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+             FROM tasks WHERE priority = 'high' AND status != 'done' AND archived = 0 ORDER BY created_at DESC LIMIT 5`,
           ),
           selectDb<{ id: number }>(
             'SELECT id FROM reports_daily WHERE date = ?',
             [today]
           ),
           selectDb<TaskSummary>(
-            "SELECT id, title, status, priority, due_date FROM tasks WHERE pinned = 1 AND archived = 0 AND status != 'done' ORDER BY priority DESC, due_date ASC"
+            `SELECT id, title, status, priority, due_date, progress,
+              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+             FROM tasks WHERE pinned = 1 AND archived = 0 AND status != 'done' ORDER BY priority DESC, due_date ASC`
           ),
           selectDb<CategorySummary>(
             `SELECT
@@ -195,17 +207,28 @@ export default function Dashboard() {
             {pinnedTasks.map(t => (
               <li
                 key={t.id}
-                className="flex items-center gap-2 text-sm text-sebastian-gray hover:text-sebastian-navy cursor-pointer transition-colors"
+                className="text-sm text-sebastian-gray hover:text-sebastian-navy cursor-pointer transition-colors"
                 onClick={() => setPeekTaskId(t.id)}
               >
-                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
-                  {PRIORITY_LABEL[t.priority] || '—'}
-                </span>
-                <span className="flex-1">{t.title}</span>
-                {t.due_date && (
-                  <span className="text-xs text-sebastian-lightgray flex-shrink-0">
-                    {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
+                    {PRIORITY_LABEL[t.priority] || '—'}
                   </span>
+                  <span className="flex-1">{t.title}</span>
+                  {t.checklist_total > 0 && <span className="text-xs text-sebastian-lightgray shrink-0 font-serif">☑{t.checklist_done}/{t.checklist_total}</span>}
+                  {t.due_date && (
+                    <span className="text-xs text-sebastian-lightgray flex-shrink-0">
+                      {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
+                    </span>
+                  )}
+                </div>
+                {t.progress > 0 && (
+                  <div className="flex items-center gap-2 mt-1 pl-8">
+                    <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(201,164,86,0.15)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${t.progress}%`, backgroundColor: 'rgba(201,164,86,0.65)' }} />
+                    </div>
+                    <span className="text-[10px] text-sebastian-lightgray font-serif shrink-0">{t.progress}%</span>
+                  </div>
                 )}
               </li>
             ))}
@@ -235,13 +258,24 @@ export default function Dashboard() {
               {todayTasks.map(t => (
                 <li
                   key={t.id}
-                  className="flex items-center gap-2 text-sm text-sebastian-gray hover:text-sebastian-navy cursor-pointer transition-colors"
+                  className="text-sm text-sebastian-gray hover:text-sebastian-navy cursor-pointer transition-colors"
                   onClick={() => setPeekTaskId(t.id)}
                 >
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${PRIORITY_COLOR[t.priority]}`}>
-                    {PRIORITY_LABEL[t.priority] || '—'}
-                  </span>
-                  {t.title}
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${PRIORITY_COLOR[t.priority]}`}>
+                      {PRIORITY_LABEL[t.priority] || '—'}
+                    </span>
+                    <span className="flex-1">{t.title}</span>
+                    {t.checklist_total > 0 && <span className="text-xs text-sebastian-lightgray shrink-0 font-serif">☑{t.checklist_done}/{t.checklist_total}</span>}
+                  </div>
+                  {t.progress > 0 && (
+                    <div className="flex items-center gap-2 mt-1 pl-8">
+                      <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(201,164,86,0.15)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${t.progress}%`, backgroundColor: 'rgba(201,164,86,0.65)' }} />
+                      </div>
+                      <span className="text-[10px] text-sebastian-lightgray font-serif shrink-0">{t.progress}%</span>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -265,15 +299,26 @@ export default function Dashboard() {
               {highPriorityTasks.map(t => (
                 <li
                   key={t.id}
-                  className="text-sm text-sebastian-gray flex items-center gap-2 hover:text-sebastian-navy cursor-pointer transition-colors"
+                  className="text-sm text-sebastian-gray hover:text-sebastian-navy cursor-pointer transition-colors"
                   onClick={() => setPeekTaskId(t.id)}
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-sebastian-gold/60 flex-shrink-0" />
-                  {t.title}
-                  {t.due_date && (
-                    <span className="text-xs text-sebastian-lightgray ml-auto">
-                      {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
-                    </span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sebastian-gold/60 flex-shrink-0" />
+                    <span className="flex-1">{t.title}</span>
+                    {t.checklist_total > 0 && <span className="text-xs text-sebastian-lightgray shrink-0 font-serif">☑{t.checklist_done}/{t.checklist_total}</span>}
+                    {t.due_date && (
+                      <span className="text-xs text-sebastian-lightgray ml-auto">
+                        {format(new Date(t.due_date + 'T00:00:00'), 'M/d')}
+                      </span>
+                    )}
+                  </div>
+                  {t.progress > 0 && (
+                    <div className="flex items-center gap-2 mt-1 pl-8">
+                      <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(201,164,86,0.15)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${t.progress}%`, backgroundColor: 'rgba(201,164,86,0.65)' }} />
+                      </div>
+                      <span className="text-[10px] text-sebastian-lightgray font-serif shrink-0">{t.progress}%</span>
+                    </div>
                   )}
                 </li>
               ))}

@@ -12,6 +12,7 @@ import DailyReport from './pages/DailyReport';
 import WeeklyCalendar from './pages/WeeklyCalendar';
 import WeeklyReport from './pages/WeeklyReport';
 import Settings from './pages/Settings';
+import Search from './pages/Search';
 import { getSetting, SETTING_KEYS } from './lib/settings';
 import { selectDb } from './lib/db';
 import { loadAndApplyTheme } from './lib/theme';
@@ -114,6 +115,7 @@ function AppRoutes() {
         <Route path="reports/daily" element={<DailyReport />} />
         <Route path="reports/weekly" element={<WeeklyReport />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="search" element={<Search />} />
       </Route>
     </Routes>
   );

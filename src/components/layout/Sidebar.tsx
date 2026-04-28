@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, PenLine, ListTodo, Calendar,
-  FileText, BookOpen, Settings, Sun, Moon, Sunset,
+  FileText, BookOpen, Settings, Sun, Moon, Sunset, Search,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { type Theme, loadAndApplyTheme, saveTheme } from '../../lib/theme';
@@ -21,6 +21,7 @@ const NAV_GROUPS = [
       { to: '/memo', icon: <PenLine size={15} />, label: '今日のメモ' },
       { to: '/tasks', icon: <ListTodo size={15} />, label: 'タスク' },
       { to: '/calendar', icon: <Calendar size={15} />, label: '週スケジュール' },
+      { to: '/search', icon: <Search size={15} />, label: '検索' },
     ],
   },
   {

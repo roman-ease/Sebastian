@@ -128,6 +128,39 @@ pub fn run() {
             sql: "ALTER TABLE tasks ADD COLUMN pinned INTEGER DEFAULT 0;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "add_notes_to_tasks",
+            sql: "ALTER TABLE tasks ADD COLUMN notes TEXT;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 5,
+            description: "add_start_date_to_tasks",
+            sql: "ALTER TABLE tasks ADD COLUMN start_date TEXT;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 6,
+            description: "add_progress_to_tasks",
+            sql: "ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 7,
+            description: "create_task_checklist",
+            sql: "
+            CREATE TABLE IF NOT EXISTS task_checklist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                checked INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
