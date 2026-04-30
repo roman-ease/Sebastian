@@ -90,6 +90,7 @@ html.theme-dark {
   --color-sebastian-gold-light: #D4BB88;
 
   /* ─ カード背景（青を落としグレー寄りに） ─ */
+  --color-sebastian-card: #1A2230;
   --color-white:    #1A2230;
   --color-gray-50:  #131B28;
   --color-gray-100: #1A2230;
@@ -166,6 +167,7 @@ html.theme-sepia {
   --color-sebastian-gold-dark: #7a5010;
   --color-sebastian-gold-light: #d4a850;
 
+  --color-sebastian-card: #ecdfc0;
   --color-white:     #e8d8b0;
   --color-gray-50:   #e0cfa0;
   --color-gray-100:  #d4bf90;

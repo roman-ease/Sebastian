@@ -336,7 +336,7 @@ export default function WeeklyCalendar() {
                   gridColumn: i + 1,
                   borderRadius: '12px',
                   border: `1px solid ${borderColor(i, tod)}`,
-                  backgroundColor: i >= 5 ? 'rgba(236,230,212,0.3)' : 'white',
+                  backgroundColor: i >= 5 ? 'rgba(201,164,86,0.08)' : 'var(--color-sebastian-card)',
                 }} />
               );
             })}
