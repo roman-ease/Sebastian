@@ -199,6 +199,20 @@ npm run tauri build
 
 ## バージョン履歴
 
+### v1.2.2 — 2026-05-08
+
+#### バグ修正
+- OpenAI / Groq / OpenRouter / LM Studio の接続テストが常に「成功」を返す偽テストになっていた問題を修正（実APIリクエストに変更）
+- カスタムプロバイダーの接続テストも実APIリクエストに対応（OpenAI互換・Claude互換それぞれの形式で送信）
+- ネットワーク接続失敗時（`Load Failed` 等）にプロバイダー・エンドポイント別の日本語案内メッセージを表示するよう改善
+
+#### 新機能
+- **ローカルLLMのワンクリック起動**: 設定画面の Ollama / LM Studio 選択時に「サーバーを起動する」ボタンを追加。起動後に接続テストを自動実行（3秒待機）
+  - Ollama: macOS では `Ollama.app` を起動、その他は `ollama serve` をバックグラウンド実行
+  - LM Studio: `lms` CLI がある場合は `lms server start`、なければ `LM Studio.app` を起動
+
+---
+
 ### v1.2.1 — 2026-04-30
 
 #### バグ修正
