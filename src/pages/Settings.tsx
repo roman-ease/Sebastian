@@ -1135,7 +1135,7 @@ export default function Settings() {
             <input
               type="text"
               className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none focus:border-sebastian-gold/60"
-              placeholder="例: txzje..."
+              placeholder="例: txzje...（20文字の小文字英数字）"
               value={form.supabaseProjectId}
               onChange={e => setForm(f => ({ ...f, supabaseProjectId: e.target.value }))}
             />
