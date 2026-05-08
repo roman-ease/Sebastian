@@ -8,6 +8,7 @@ import { PageHeader, OrnateCard, CardHeading } from '../components/ClassicUI';
 import { registerShortcut } from '../lib/shortcut';
 import { checkOllamaConnection, checkGeminiConnection, type OllamaStatus } from '../lib/ai';
 import { pushSync, pullSync, getSyncFolderDbMtime } from '../lib/sync';
+import { pushAllToSupabase } from '../lib/supabase';
 import { selectDb, executeDb } from '../lib/db';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
@@ -93,6 +94,8 @@ export default function Settings() {
   const [errorMsg, setErrorMsg] = useState('');
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [launching, setLaunching] = useState(false);
   const [launchMsg, setLaunchMsg] = useState<{ ok: boolean; msg: string } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -1087,6 +1090,43 @@ export default function Settings() {
               </p>
             )}
           </div>
+        </div>
+      </OrnateCard>
+
+      {/* Supabase 同期 */}
+      <OrnateCard className="p-6">
+        <div className="space-y-4">
+          <CardHeading>クラウド同期（Supabase）</CardHeading>
+          <p className="text-xs text-sebastian-lightgray -mt-2">
+            既存のローカルデータを Supabase に一括インポートします。<br />
+            初回セットアップ時や、別デバイスで作業した後の手動同期に使用してください。
+          </p>
+          <button
+            onClick={async () => {
+              setImporting(true);
+              setImportStatus(null);
+              try {
+                await pushAllToSupabase();
+                setImportStatus({ ok: true, msg: '全データのインポートが完了しました' });
+              } catch (e) {
+                setImportStatus({ ok: false, msg: `失敗: ${e instanceof Error ? e.message : String(e)}` });
+              } finally {
+                setImporting(false);
+              }
+            }}
+            disabled={importing}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-serif transition-colors disabled:opacity-50"
+            style={{ background: '#1e2e4a', color: '#c9a456', border: '1px solid #c9a456' }}
+          >
+            <Upload size={15} />
+            {importing ? 'インポート中...' : 'ローカルDB を Supabase にインポート'}
+          </button>
+          {importStatus && (
+            <p className={`text-xs flex items-center gap-1 ${importStatus.ok ? 'text-green-600' : 'text-red-500'}`}>
+              {importStatus.ok ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
+              {importStatus.msg}
+            </p>
+          )}
         </div>
       </OrnateCard>
 

@@ -123,6 +123,28 @@ export async function pushWeeklyReport(weekStartDate: string, content: string): 
   }
 }
 
+// ─── 全データ一括 Push（既存 DB のインポート用）──────────────────────────────
+
+export async function pushAllToSupabase(): Promise<void> {
+  try {
+    const tasks = await selectDb<{ id: number }>('SELECT id FROM tasks');
+    for (const t of tasks) {
+      await pushTask(t.id);
+      await pushChecklist(t.id);
+    }
+    const memos = await selectDb<{ date: string; content: string }>('SELECT date, content FROM daily_memos');
+    for (const m of memos) await pushMemo(m.date, m.content);
+
+    const daily = await selectDb<{ date: string; content: string }>('SELECT date, content FROM reports_daily');
+    for (const r of daily) await pushDailyReport(r.date, r.content);
+
+    const weekly = await selectDb<{ week_start_date: string; content: string }>('SELECT week_start_date, content FROM reports_weekly');
+    for (const r of weekly) await pushWeeklyReport(r.week_start_date, r.content);
+  } catch (e) {
+    console.error('[supabase] pushAllToSupabase:', e);
+  }
+}
+
 // ─── Pull: Supabase → ローカル（起動時同期）──────────────────────────────────
 
 export async function pullFromSupabase(): Promise<void> {

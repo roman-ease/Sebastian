@@ -27,9 +27,11 @@ function AppRoutes() {
     loadAndApplyTheme().catch(console.warn);
   }, []);
 
-  // 起動時: sync_id カラム保証 → Supabase pull
+  // 起動時: sync_id カラム保証 → Supabase pull → 定期ポーリング
   useEffect(() => {
     ensureSyncIdColumns().then(() => pullFromSupabase());
+    const interval = setInterval(() => pullFromSupabase(), 60_000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
