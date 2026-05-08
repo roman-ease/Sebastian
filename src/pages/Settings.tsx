@@ -207,8 +207,86 @@ export default function Settings() {
         } catch (e) {
           setTestStatus({ ok: false, msg: `接続失敗: ${e instanceof Error ? e.message : String(e)}` });
         }
-      } else if (['openai', 'groq', 'openrouter', 'lmstudio'].includes(form.aiProvider) || form.aiProvider.startsWith('custom:')) {
-        setTestStatus({ ok: true, msg: '設定を保存しました。実際の動作は日報生成などで確認してください。' });
+      } else if (form.aiProvider === 'openai') {
+        if (!form.openaiApiKey) { setTestStatus({ ok: false, msg: 'APIキーが未入力です' }); return; }
+        try {
+          const res = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${form.openaiApiKey}` },
+            body: JSON.stringify({ model: form.openaiModel, max_tokens: 1, messages: [{ role: 'user', content: 'test' }] }),
+            signal: AbortSignal.timeout(8000),
+          });
+          setTestStatus({ ok: res.ok || res.status === 400, msg: res.ok || res.status === 400 ? 'OpenAI に接続できました' : `エラー (${res.status})` });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setTestStatus({ ok: false, msg: `接続失敗: ${msg}` });
+        }
+      } else if (form.aiProvider === 'groq') {
+        if (!form.groqApiKey) { setTestStatus({ ok: false, msg: 'APIキーが未入力です' }); return; }
+        try {
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${form.groqApiKey}` },
+            body: JSON.stringify({ model: form.groqModel, max_tokens: 1, messages: [{ role: 'user', content: 'test' }] }),
+            signal: AbortSignal.timeout(8000),
+          });
+          setTestStatus({ ok: res.ok || res.status === 400, msg: res.ok || res.status === 400 ? 'Groq に接続できました' : `エラー (${res.status})` });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setTestStatus({ ok: false, msg: `接続失敗: ${msg}` });
+        }
+      } else if (form.aiProvider === 'openrouter') {
+        if (!form.openrouterApiKey) { setTestStatus({ ok: false, msg: 'APIキーが未入力です' }); return; }
+        try {
+          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${form.openrouterApiKey}` },
+            body: JSON.stringify({ model: form.openrouterModel, max_tokens: 1, messages: [{ role: 'user', content: 'test' }] }),
+            signal: AbortSignal.timeout(8000),
+          });
+          setTestStatus({ ok: res.ok || res.status === 400, msg: res.ok || res.status === 400 ? 'OpenRouter に接続できました' : `エラー (${res.status})` });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setTestStatus({ ok: false, msg: `接続失敗: ${msg}` });
+        }
+      } else if (form.aiProvider === 'lmstudio') {
+        try {
+          const res = await fetch(`${form.lmstudioEndpoint}/v1/models`, { signal: AbortSignal.timeout(5000) });
+          setTestStatus({ ok: res.ok, msg: res.ok ? 'LM Studio に接続できました' : `エラー (${res.status})` });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setTestStatus({ ok: false, msg: `接続失敗: ${msg}\nLM Studio の「Local Server」が起動しているか確認してください。` });
+        }
+      } else if (form.aiProvider.startsWith('custom:')) {
+        const customId = form.aiProvider.slice('custom:'.length);
+        const provider = customProviders.find(p => p.id === customId);
+        if (!provider) { setTestStatus({ ok: false, msg: 'カスタムプロバイダーが見つかりません' }); return; }
+        try {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (provider.api_key) headers['Authorization'] = `Bearer ${provider.api_key}`;
+          let res: Response;
+          if (provider.type === 'claude') {
+            if (provider.api_key) { delete headers['Authorization']; headers['x-api-key'] = provider.api_key; }
+            headers['anthropic-version'] = '2023-06-01';
+            res = await fetch(`${provider.endpoint}/v1/messages`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ model: provider.model, max_tokens: 1, messages: [{ role: 'user', content: 'test' }] }),
+              signal: AbortSignal.timeout(8000),
+            });
+          } else {
+            res = await fetch(`${provider.endpoint}/v1/chat/completions`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ model: provider.model, max_tokens: 1, messages: [{ role: 'user', content: 'test' }] }),
+              signal: AbortSignal.timeout(8000),
+            });
+          }
+          setTestStatus({ ok: res.ok || res.status === 400, msg: res.ok || res.status === 400 ? `${provider.name} に接続できました` : `エラー (${res.status})` });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setTestStatus({ ok: false, msg: `接続失敗: ${msg}` });
+        }
       }
     } finally {
       setTesting(false);
@@ -1036,7 +1114,7 @@ export default function Settings() {
       </div>
 
       <div className="text-xs text-sebastian-lightgray/50 border-t border-sebastian-border/30 pt-4 font-serif">
-        Sebastian v1.2.1 — AI Work Supporter
+        Sebastian v1.2.2 — AI Work Supporter
       </div>
     </div>
   );

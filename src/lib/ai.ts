@@ -79,24 +79,46 @@ export async function checkOllamaConnection(endpoint?: string): Promise<OllamaSt
   }
 }
 
+function wrapNetworkError(e: unknown, providerName: string, endpoint?: string): Error {
+  const msg = e instanceof Error ? e.message : String(e);
+  const isLoadFailed = /load failed/i.test(msg) || /failed to fetch/i.test(msg) || /network/i.test(msg);
+  if (!isLoadFailed) return new Error(msg);
+
+  if (endpoint && (endpoint.includes('localhost') || endpoint.includes('127.0.0.1'))) {
+    return new Error(
+      `${providerName} への接続に失敗しました（Load Failed）。\n` +
+      `${providerName} のローカルサーバーが起動しているか確認してください（${endpoint}）。`
+    );
+  }
+  return new Error(
+    `${providerName} への接続に失敗しました（Load Failed）。\n` +
+    'インターネット接続・ファイアウォール・セキュリティソフトをご確認ください。'
+  );
+}
+
 async function callOllama(systemPrompt: string, userMessage: string): Promise<string> {
   const endpoint = (await getSetting(SETTING_KEYS.OLLAMA_ENDPOINT)) ?? 'http://localhost:11434';
   const model = (await getSetting(SETTING_KEYS.OLLAMA_MODEL)) ?? 'qwen2.5:7b';
 
-  const res = await fetch(`${endpoint}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      stream: false,
-      options: { temperature: 0.3, num_predict: 2048 },
-    }),
-    signal: AbortSignal.timeout(120_000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${endpoint}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        stream: false,
+        options: { temperature: 0.3, num_predict: 2048 },
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (e) {
+    throw wrapNetworkError(e, 'Ollama', endpoint);
+  }
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -120,20 +142,29 @@ async function callOpenAICompatible(
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-  const res = await fetch(`${endpoint}/v1/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user',   content: userMessage },
-      ],
-      temperature: 0.3,
-      max_tokens: 8192,
-    }),
-    signal: AbortSignal.timeout(120_000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${endpoint}/v1/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userMessage },
+        ],
+        temperature: 0.3,
+        max_tokens: 8192,
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (e) {
+    const providerLabel = endpoint.includes('openai.com') ? 'OpenAI'
+      : endpoint.includes('groq.com') ? 'Groq'
+      : endpoint.includes('openrouter.ai') ? 'OpenRouter'
+      : endpoint;
+    throw wrapNetworkError(e, providerLabel, endpoint);
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
@@ -150,21 +181,26 @@ async function callClaude(systemPrompt: string, userMessage: string): Promise<st
   const model  = (await getSetting(SETTING_KEYS.CLAUDE_MODEL)) ?? 'claude-haiku-4-5-20251001';
   if (!apiKey) throw new Error('Claude APIキーが設定されていません。設定画面から入力してください。');
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 8192,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-    signal: AbortSignal.timeout(120_000),
-  });
+  let res: Response;
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 8192,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (e) {
+    throw wrapNetworkError(e, 'Claude (api.anthropic.com)');
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
@@ -238,12 +274,17 @@ async function fetchGeminiWithRetry(url: string, bodyObj: object): Promise<Respo
   let lastErr = '';
   for (let attempt = 0; attempt <= GEMINI_RETRY_DELAYS.length; attempt++) {
     if (attempt > 0) await new Promise(r => setTimeout(r, GEMINI_RETRY_DELAYS[attempt - 1]));
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bodyObj),
-      signal: AbortSignal.timeout(60_000),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyObj),
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (e) {
+      throw wrapNetworkError(e, 'Gemini');
+    }
     if (!res.ok) {
       const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
       const msg = body.error?.message ?? `HTTP ${res.status}`;
@@ -354,7 +395,7 @@ const DAILY_SYSTEM = `あなたは業務支援AIアシスタント「Sebastian�
 （保留中のタスク）
 
 ---
-*生成: Sebastian v1.2.1*
+*生成: Sebastian v1.2.2*
 *このドラフトを確認・編集のうえ承認してください*
 
 ルール: 丁寧で実務的な文体。メモの口語表現・略語を適切に整形。推測や意見は含めない。`;
@@ -379,7 +420,7 @@ const WEEKLY_SYSTEM = `あなたは業務支援AIアシスタント「Sebastian�
 （優先度・期限から来週注力すべきタスク）
 
 ---
-*生成: Sebastian v1.2.1*
+*生成: Sebastian v1.2.2*
 *このドラフトを確認・編集のうえ承認してください*
 
 ルール: 日報の断片をそのままコピーせず週単位で集約。丁寧で実務的な文体。`;
