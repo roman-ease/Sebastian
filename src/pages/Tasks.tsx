@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp, Pin, PinOff, Search, X, ArrowUp, ArrowDown, Check } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
 import { logTaskAction } from '../lib/taskLogs';
-import { pushTask, supabase } from '../lib/supabase';
+import { pushTask, getSupabaseClient } from '../lib/supabase';
 import { TaskModal, type TaskFormData, type TaskStatus, type TaskPriority } from '../components/TaskModal';
 import { OrnateCard, PageHeader } from '../components/ClassicUI';
 
@@ -301,7 +301,7 @@ export default function Tasks() {
       const syncId = syncRows[0]?.sync_id;
       await executeDb('DELETE FROM task_checklist WHERE task_id=?', [id]);
       await executeDb('DELETE FROM tasks WHERE id=?', [id]);
-      if (syncId) supabase.from('tasks').delete().eq('id', syncId);
+      if (syncId) getSupabaseClient().then(c => c?.from('tasks').delete().eq('id', syncId));
       await logTaskAction({
         taskId: id,
         actionType: 'delete',

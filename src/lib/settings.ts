@@ -29,6 +29,8 @@ export const SETTING_KEYS = {
   SYNC_FOLDER: 'sync_folder',
   LAST_SYNC_AT: 'last_sync_at',
   MEMO_SYNC_FOLDER: 'memo_sync_folder',
+  SUPABASE_PROJECT_ID: 'supabase_project_id',
+  SUPABASE_KEY: 'supabase_key',
 } as const;
 
 export async function getSetting(key: string): Promise<string | null> {

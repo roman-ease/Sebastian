@@ -1,15 +1,34 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { executeDb, selectDb } from './db';
+import { getSetting, SETTING_KEYS } from './settings';
 
-const SUPABASE_URL = 'https://txzjevnratucusimmugg.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_cXqzvvxcNa0yiVDVkJS2Mg_dt1y83Mb';
+let _client: SupabaseClient | null = null;
+let _cachedUrl = '';
+let _cachedKey = '';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+export async function getSupabaseClient(): Promise<SupabaseClient | null> {
+  const projectId = await getSetting(SETTING_KEYS.SUPABASE_PROJECT_ID);
+  const key = await getSetting(SETTING_KEYS.SUPABASE_KEY);
+  if (!projectId || !key) return null;
+  const url = `https://${projectId}.supabase.co`;
+  if (url !== _cachedUrl || key !== _cachedKey || !_client) {
+    _client = createClient(url, key);
+    _cachedUrl = url;
+    _cachedKey = key;
+  }
+  return _client;
+}
+
+// 後方互換: 直接 supabase を使っている箇所向け（内部用）
+async function sb(): Promise<SupabaseClient | null> {
+  return getSupabaseClient();
+}
 
 // ─── Push: ローカル → Supabase ────────────────────────────────────────────────
 
 export async function pushMemo(date: string, content: string): Promise<void> {
   try {
+    const client = await sb(); if (!client) return;
     const rows = await selectDb<{ sync_id: string | null }>(
       'SELECT sync_id FROM daily_memos WHERE date = ?', [date]
     );
@@ -18,7 +37,7 @@ export async function pushMemo(date: string, content: string): Promise<void> {
       syncId = crypto.randomUUID();
       await executeDb('UPDATE daily_memos SET sync_id = ? WHERE date = ?', [syncId, date]);
     }
-    await supabase.from('daily_memos').upsert({
+    await client.from('daily_memos').upsert({
       id: syncId, date, content, updated_at: new Date().toISOString(),
     });
   } catch (e) {
@@ -28,6 +47,7 @@ export async function pushMemo(date: string, content: string): Promise<void> {
 
 export async function pushTask(localId: number): Promise<void> {
   try {
+    const client = await sb(); if (!client) return;
     const rows = await selectDb<any>('SELECT * FROM tasks WHERE id = ?', [localId]);
     if (!rows.length) return;
     const t = rows[0];
@@ -36,7 +56,7 @@ export async function pushTask(localId: number): Promise<void> {
       syncId = crypto.randomUUID();
       await executeDb('UPDATE tasks SET sync_id = ? WHERE id = ?', [syncId, localId]);
     }
-    await supabase.from('tasks').upsert({
+    await client.from('tasks').upsert({
       id: syncId,
       title: t.title, description: t.description, status: t.status,
       priority: t.priority, due_date: t.due_date, category: t.category,
@@ -51,6 +71,7 @@ export async function pushTask(localId: number): Promise<void> {
 
 export async function pushChecklist(localTaskId: number): Promise<void> {
   try {
+    const client = await sb(); if (!client) return;
     const taskRows = await selectDb<{ sync_id: string | null }>(
       'SELECT sync_id FROM tasks WHERE id = ?', [localTaskId]
     );
@@ -70,9 +91,9 @@ export async function pushChecklist(localTaskId: number): Promise<void> {
     }
 
     // Supabase 側をまるごと差し替え
-    await supabase.from('task_checklist').delete().eq('task_id', taskSyncId);
+    await client.from('task_checklist').delete().eq('task_id', taskSyncId);
     if (items.length > 0) {
-      await supabase.from('task_checklist').insert(
+      await client.from('task_checklist').insert(
         items.map((item: any) => ({
           id: item.sync_id,
           task_id: taskSyncId,
@@ -89,6 +110,7 @@ export async function pushChecklist(localTaskId: number): Promise<void> {
 
 export async function pushDailyReport(date: string, content: string): Promise<void> {
   try {
+    const client = await sb(); if (!client) return;
     const rows = await selectDb<{ sync_id: string | null }>(
       'SELECT sync_id FROM reports_daily WHERE date = ?', [date]
     );
@@ -97,7 +119,7 @@ export async function pushDailyReport(date: string, content: string): Promise<vo
       syncId = crypto.randomUUID();
       await executeDb('UPDATE reports_daily SET sync_id = ? WHERE date = ?', [syncId, date]);
     }
-    await supabase.from('reports_daily').upsert({
+    await client.from('reports_daily').upsert({
       id: syncId, date, content, updated_at: new Date().toISOString(),
     });
   } catch (e) {
@@ -107,6 +129,7 @@ export async function pushDailyReport(date: string, content: string): Promise<vo
 
 export async function pushWeeklyReport(weekStartDate: string, content: string): Promise<void> {
   try {
+    const client = await sb(); if (!client) return;
     const rows = await selectDb<{ sync_id: string | null }>(
       'SELECT sync_id FROM reports_weekly WHERE week_start_date = ?', [weekStartDate]
     );
@@ -115,7 +138,7 @@ export async function pushWeeklyReport(weekStartDate: string, content: string): 
       syncId = crypto.randomUUID();
       await executeDb('UPDATE reports_weekly SET sync_id = ? WHERE week_start_date = ?', [syncId, weekStartDate]);
     }
-    await supabase.from('reports_weekly').upsert({
+    await client.from('reports_weekly').upsert({
       id: syncId, week_start_date: weekStartDate, content, updated_at: new Date().toISOString(),
     });
   } catch (e) {
@@ -156,7 +179,8 @@ export async function pullFromSupabase(): Promise<void> {
 }
 
 async function pullMemos(): Promise<void> {
-  const { data } = await supabase.from('daily_memos').select('*');
+  const client = await sb(); if (!client) return;
+  const { data } = await client.from('daily_memos').select('*');
   if (!data) return;
   for (const row of data) {
     const local = await selectDb<{ updated_at: string }>(
@@ -177,7 +201,8 @@ async function pullMemos(): Promise<void> {
 }
 
 async function pullTasks(): Promise<void> {
-  const { data: tasks } = await supabase
+  const client = await sb(); if (!client) return;
+  const { data: tasks } = await client
     .from('tasks')
     .select('*, task_checklist(*)');
   if (!tasks) return;
@@ -227,7 +252,8 @@ async function pullTasks(): Promise<void> {
 }
 
 async function pullDailyReports(): Promise<void> {
-  const { data } = await supabase.from('reports_daily').select('*');
+  const client = await sb(); if (!client) return;
+  const { data } = await client.from('reports_daily').select('*');
   if (!data) return;
   for (const row of data) {
     const local = await selectDb<{ updated_at: string }>(
@@ -248,7 +274,8 @@ async function pullDailyReports(): Promise<void> {
 }
 
 async function pullWeeklyReports(): Promise<void> {
-  const { data } = await supabase.from('reports_weekly').select('*');
+  const client = await sb(); if (!client) return;
+  const { data } = await client.from('reports_weekly').select('*');
   if (!data) return;
   for (const row of data) {
     const local = await selectDb<{ updated_at: string }>(

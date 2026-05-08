@@ -49,6 +49,8 @@ interface SettingsForm {
   reminderWeekdaysOnly: boolean;
   syncFolder: string;
   memoSyncFolder: string;
+  supabaseProjectId: string;
+  supabaseKey: string;
 }
 
 export default function Settings() {
@@ -77,6 +79,8 @@ export default function Settings() {
     reminderWeekdaysOnly: true,
     syncFolder: '',
     memoSyncFolder: '',
+    supabaseProjectId: '',
+    supabaseKey: '',
   });
   const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
   const [showAddProvider, setShowAddProvider] = useState(false);
@@ -95,6 +99,9 @@ export default function Settings() {
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [showSupabaseKey, setShowSupabaseKey] = useState(false);
+  const [supabaseTestStatus, setSupabaseTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [supabaseTesting, setSupabaseTesting] = useState(false);
   const [importStatus, setImportStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [launching, setLaunching] = useState(false);
   const [launchMsg, setLaunchMsg] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -108,7 +115,8 @@ export default function Settings() {
         groqKey, groqModel, openrouterKey, openrouterModel,
         lmstudioEndpoint, lmstudioModel,
         reminderEnabled, reminderTime, reminderWeekdaysOnly,
-        syncFolderSetting, lastSyncAtSetting, memoSyncFolderSetting] = await Promise.all([
+        syncFolderSetting, lastSyncAtSetting, memoSyncFolderSetting,
+        supabaseProjectIdSetting, supabaseKeySetting] = await Promise.all([
         getSetting(SETTING_KEYS.DAILY_REPORT_PATH),
         getSetting(SETTING_KEYS.WEEKLY_REPORT_PATH),
         getSetting(SETTING_KEYS.GLOBAL_SHORTCUT),
@@ -135,6 +143,8 @@ export default function Settings() {
         getSetting(SETTING_KEYS.SYNC_FOLDER),
         getSetting(SETTING_KEYS.LAST_SYNC_AT),
         getSetting(SETTING_KEYS.MEMO_SYNC_FOLDER),
+        getSetting(SETTING_KEYS.SUPABASE_PROJECT_ID),
+        getSetting(SETTING_KEYS.SUPABASE_KEY),
       ]);
       const syncFolderVal = syncFolderSetting ?? '';
       setLastSyncAt(lastSyncAtSetting ?? null);
@@ -170,6 +180,8 @@ export default function Settings() {
         reminderWeekdaysOnly: reminderWeekdaysOnly !== 'false',
         syncFolder: syncFolderVal,
         memoSyncFolder: memoSyncFolderSetting ?? '',
+        supabaseProjectId: supabaseProjectIdSetting ?? '',
+        supabaseKey: supabaseKeySetting ?? '',
       });
     }
     load();
@@ -373,6 +385,8 @@ export default function Settings() {
         setSetting(SETTING_KEYS.REMINDER_WEEKDAYS_ONLY, String(form.reminderWeekdaysOnly)),
         setSetting(SETTING_KEYS.SYNC_FOLDER, form.syncFolder),
         setSetting(SETTING_KEYS.MEMO_SYNC_FOLDER, form.memoSyncFolder),
+        setSetting(SETTING_KEYS.SUPABASE_PROJECT_ID, form.supabaseProjectId),
+        setSetting(SETTING_KEYS.SUPABASE_KEY, form.supabaseKey),
       ]);
 
       try {
@@ -1098,34 +1112,118 @@ export default function Settings() {
         <div className="space-y-4">
           <CardHeading>クラウド同期（Supabase）</CardHeading>
           <p className="text-xs text-sebastian-lightgray -mt-2">
-            既存のローカルデータを Supabase に一括インポートします。<br />
-            初回セットアップ時や、別デバイスで作業した後の手動同期に使用してください。
+            マルチデバイス同期に使用します。自分の Supabase プロジェクトの情報を入力してください。
           </p>
-          <button
-            onClick={async () => {
-              setImporting(true);
-              setImportStatus(null);
-              try {
-                await pushAllToSupabase();
-                setImportStatus({ ok: true, msg: '全データのインポートが完了しました' });
-              } catch (e) {
-                setImportStatus({ ok: false, msg: `失敗: ${e instanceof Error ? e.message : String(e)}` });
-              } finally {
-                setImporting(false);
-              }
-            }}
-            disabled={importing}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-serif transition-colors disabled:opacity-50"
-            style={{ background: '#1e2e4a', color: '#c9a456', border: '1px solid #c9a456' }}
-          >
-            <Upload size={15} />
-            {importing ? 'インポート中...' : 'ローカルDB を Supabase にインポート'}
-          </button>
-          {importStatus && (
-            <p className={`text-xs flex items-center gap-1 ${importStatus.ok ? 'text-green-600' : 'text-red-500'}`}>
-              {importStatus.ok ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
-              {importStatus.msg}
-            </p>
+
+          {/* Project ID */}
+          <div className="space-y-1.5">
+            <label className="block text-sm text-sebastian-gray">Project ID</label>
+            <input
+              type="text"
+              className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none focus:border-sebastian-gold/60"
+              placeholder="例: txzjevnratucusimmugg"
+              value={form.supabaseProjectId}
+              onChange={e => setForm(f => ({ ...f, supabaseProjectId: e.target.value }))}
+            />
+            {form.supabaseProjectId && (
+              <p className="text-xs text-sebastian-lightgray">
+                URL: https://{form.supabaseProjectId}.supabase.co
+              </p>
+            )}
+          </div>
+
+          {/* Publishable key */}
+          <div className="space-y-1.5">
+            <label className="block text-sm text-sebastian-gray">Publishable Key</label>
+            <div className="flex gap-2">
+              <input
+                type={showSupabaseKey ? 'text' : 'password'}
+                className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none focus:border-sebastian-gold/60"
+                placeholder="sb_publishable_..."
+                value={form.supabaseKey}
+                onChange={e => setForm(f => ({ ...f, supabaseKey: e.target.value }))}
+              />
+              <button
+                type="button"
+                onClick={() => setShowSupabaseKey(v => !v)}
+                className="px-3 py-2 bg-sebastian-border/30 text-sebastian-gray rounded-lg hover:bg-sebastian-border/50 transition-colors"
+              >
+                {showSupabaseKey ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+
+          {/* 接続テスト */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                if (!form.supabaseProjectId || !form.supabaseKey) {
+                  setSupabaseTestStatus({ ok: false, msg: 'Project ID と Key を入力してください' });
+                  return;
+                }
+                setSupabaseTesting(true);
+                setSupabaseTestStatus(null);
+                try {
+                  const { createClient } = await import('@supabase/supabase-js');
+                  const url = `https://${form.supabaseProjectId}.supabase.co`;
+                  const client = createClient(url, form.supabaseKey);
+                  const { error } = await client.from('tasks').select('id').limit(1);
+                  if (error) throw new Error(error.message);
+                  setSupabaseTestStatus({ ok: true, msg: '接続できました' });
+                } catch (e) {
+                  setSupabaseTestStatus({ ok: false, msg: `接続失敗: ${e instanceof Error ? e.message : String(e)}` });
+                } finally {
+                  setSupabaseTesting(false);
+                }
+              }}
+              disabled={supabaseTesting}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-serif transition-colors disabled:opacity-50"
+              style={{ background: '#1e2e4a', color: '#c9a456', border: '1px solid #c9a456' }}
+            >
+              <Wifi size={13} />
+              {supabaseTesting ? 'テスト中...' : '接続テスト'}
+            </button>
+            {supabaseTestStatus && (
+              <span className={`text-xs flex items-center gap-1 ${supabaseTestStatus.ok ? 'text-green-600' : 'text-red-500'}`}>
+                {supabaseTestStatus.ok ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
+                {supabaseTestStatus.msg}
+              </span>
+            )}
+          </div>
+
+          {/* 一括インポート */}
+          {form.supabaseProjectId && form.supabaseKey && (
+            <div className="border-t border-sebastian-border/30 pt-4 space-y-2">
+              <p className="text-xs text-sebastian-lightgray">
+                初回セットアップ時にローカルの全データを Supabase へ送信します。
+              </p>
+              <button
+                onClick={async () => {
+                  setImporting(true);
+                  setImportStatus(null);
+                  try {
+                    await pushAllToSupabase();
+                    setImportStatus({ ok: true, msg: '全データのインポートが完了しました' });
+                  } catch (e) {
+                    setImportStatus({ ok: false, msg: `失敗: ${e instanceof Error ? e.message : String(e)}` });
+                  } finally {
+                    setImporting(false);
+                  }
+                }}
+                disabled={importing}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-serif transition-colors disabled:opacity-50"
+                style={{ background: '#1e2e4a', color: '#c9a456', border: '1px solid #c9a456' }}
+              >
+                <Upload size={15} />
+                {importing ? 'インポート中...' : 'ローカルDB を Supabase にインポート'}
+              </button>
+              {importStatus && (
+                <p className={`text-xs flex items-center gap-1 ${importStatus.ok ? 'text-green-600' : 'text-red-500'}`}>
+                  {importStatus.ok ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
+                  {importStatus.msg}
+                </p>
+              )}
+            </div>
           )}
         </div>
       </OrnateCard>
