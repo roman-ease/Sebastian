@@ -9,6 +9,7 @@ import { registerShortcut } from '../lib/shortcut';
 import { checkOllamaConnection, checkGeminiConnection, type OllamaStatus } from '../lib/ai';
 import { pushSync, pullSync, getSyncFolderDbMtime } from '../lib/sync';
 import { pushAllToSupabase } from '../lib/supabase';
+import { SetupGuideModal } from '../components/SetupGuideModal';
 import { selectDb, executeDb } from '../lib/db';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
@@ -99,6 +100,7 @@ export default function Settings() {
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [showSupabaseKey, setShowSupabaseKey] = useState(false);
   const [supabaseTestStatus, setSupabaseTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [supabaseTesting, setSupabaseTesting] = useState(false);
@@ -513,6 +515,18 @@ export default function Settings() {
   return (
     <div className="space-y-6 max-w-2xl">
       <PageHeader label="SETTINGS" title="設定" />
+
+      {/* セットアップガイド */}
+      <div className="flex justify-end -mt-2">
+        <button
+          onClick={() => setShowSetupGuide(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-serif rounded-lg transition-colors"
+          style={{ background: '#1e2e4a', color: '#c9a456', border: '1px solid #c9a456' }}
+        >
+          初期セットアップ手順を見る
+        </button>
+      </div>
+      {showSetupGuide && <SetupGuideModal onClose={() => setShowSetupGuide(false)} />}
 
       {/* AI設定 */}
       <OrnateCard className="p-6">
