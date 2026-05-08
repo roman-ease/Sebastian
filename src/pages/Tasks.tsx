@@ -299,16 +299,16 @@ export default function Tasks() {
     try {
       const syncRows = await selectDb<{ sync_id: string | null }>('SELECT sync_id FROM tasks WHERE id=?', [id]);
       const syncId = syncRows[0]?.sync_id;
-      await executeDb('DELETE FROM task_checklist WHERE task_id=?', [id]);
-      await executeDb('DELETE FROM task_logs WHERE task_id=?', [id]);
-      await executeDb('DELETE FROM tasks WHERE id=?', [id]);
-      if (syncId) getSupabaseClient().then(c => c?.from('tasks').delete().eq('id', syncId));
       await logTaskAction({
         taskId: id,
         actionType: 'delete',
         beforeJson: task ?? undefined,
         actorType: 'user',
       });
+      await executeDb('DELETE FROM task_checklist WHERE task_id=?', [id]);
+      await executeDb('DELETE FROM task_logs WHERE task_id=?', [id]);
+      await executeDb('DELETE FROM tasks WHERE id=?', [id]);
+      if (syncId) getSupabaseClient().then(c => c?.from('tasks').delete().eq('id', syncId));
       setDeletingId(null);
       loadTasks();
     } catch (e: unknown) {
