@@ -1135,7 +1135,7 @@ export default function Settings() {
             <input
               type="text"
               className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none focus:border-sebastian-gold/60"
-              placeholder="例: txzjevnratucusimmugg"
+              placeholder="例: txzje..."
               value={form.supabaseProjectId}
               onChange={e => setForm(f => ({ ...f, supabaseProjectId: e.target.value }))}
             />
@@ -1153,7 +1153,7 @@ export default function Settings() {
               <input
                 type={showSupabaseKey ? 'text' : 'password'}
                 className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none focus:border-sebastian-gold/60"
-                placeholder="sb_publishable_..."
+                placeholder="sb_pub..."
                 value={form.supabaseKey}
                 onChange={e => setForm(f => ({ ...f, supabaseKey: e.target.value }))}
               />
