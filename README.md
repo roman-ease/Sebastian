@@ -102,8 +102,15 @@
 - 初回起動時にブラウザの通知許可が必要です
 
 ### データ同期
-- 指定フォルダへのエクスポート／インポートによるPC間同期
-- 設定画面で同期フォルダを指定してPush / Pull
+- **クラウド同期（Supabase）**: Windows / Mac / Android / iOS でタスク・メモ・日報・週報を自動同期
+  - 設定画面で Project ID・Publishable Key を入力するだけで有効化
+  - 書き込み時即時 push・起動時および1分ごとに pull
+  - 未設定時はローカルのみで動作（従来どおり）
+- **フォルダ同期**: OneDrive・USB など共有フォルダ経由でのPC間エクスポート／インポート
+
+### Quill 連携
+- 指定フォルダに当日メモを `YYYY-MM-DD.md` として書き出し
+- Quill でそのファイルを開くと双方向リアルタイム同期
 
 ---
 
@@ -126,6 +133,7 @@
 | 言語 | TypeScript / Rust |
 | UI | Tailwind CSS v4 |
 | DB | SQLite（`tauri-plugin-sql`） |
+| クラウド同期 | Supabase（オプション） |
 | AI | Gemini / Claude / OpenAI / Groq / OpenRouter / Ollama / LM Studio / カスタム |
 | ビルドツール | Vite |
 
@@ -182,15 +190,16 @@ npm run tauri build
 
 | データ | 保存先 |
 |--------|--------|
-| メモ・タスク・日報・週報（DB） | Tauriアプリデータディレクトリ（`%APPDATA%/sebastian/`） |
-| 日報Markdownファイル | 設定で指定したフォルダ |
-| 週報Markdownファイル | 設定で指定したフォルダ |
+| メモ・タスク・日報・週報（DB） | `%APPDATA%\com.sebastian.app\sebastian.db` |
+| 日報 Markdown ファイル | 設定で指定したフォルダ |
+| 週報 Markdown ファイル | 設定で指定したフォルダ |
+| クラウド同期（オプション） | Supabase（設定で Project ID・Key を指定） |
 
 ---
 
 ## 設計方針
 
-- **ローカル完結** — クラウド同期なし。データはすべて手元に。
+- **ローカルファースト** — データは手元の SQLite に保存。クラウド同期はオプション。
 - **AI提案は必ずユーザー確認を経由** — 自動確定処理は一切行わない。
 - **AI失敗時もデータを守る** — メモ・タスクは常に手動で管理可能。
 - **軽量さ優先** — 常駐しても邪魔にならない起動速度を維持。
