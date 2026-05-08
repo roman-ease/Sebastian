@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { invoke } from '@tauri-apps/api/core';
 import { Sparkles, CheckCircle, AlertCircle, Pencil } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
+import { pushDailyReport } from '../lib/supabase';
 import { PageHeader, OrnateCard, CardHeading } from '../components/ClassicUI';
 import { generateDailyReport, extractTaskCandidates, type TaskLogEntry, type TaskEntry, type TaskCandidate } from '../lib/ai';
 import { getSetting, SETTING_KEYS } from '../lib/settings';
@@ -90,6 +91,7 @@ export default function DailyReport() {
         await invoke<void>('write_text_file', { path: filePath, content });
       }
 
+      pushDailyReport(today, content);
       setSavedContent(content);
       setDraft('');
       setPageState('saved');

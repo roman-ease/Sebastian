@@ -28,6 +28,7 @@ export const SETTING_KEYS = {
   THEME: 'theme',
   SYNC_FOLDER: 'sync_folder',
   LAST_SYNC_AT: 'last_sync_at',
+  MEMO_SYNC_FOLDER: 'memo_sync_folder',
 } as const;
 
 export async function getSetting(key: string): Promise<string | null> {

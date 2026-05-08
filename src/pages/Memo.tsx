@@ -3,7 +3,10 @@ import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { executeDb, selectDb } from '../lib/db';
+import { getSetting, SETTING_KEYS } from '../lib/settings';
+import { pushMemo } from '../lib/supabase';
 import { PageHeader } from '../components/ClassicUI';
 
 export default function Memo() {
@@ -12,9 +15,22 @@ export default function Memo() {
   const [content, setContent] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'typing' | 'saving' | 'saved' | 'error'>('idle');
   const [reportExists, setReportExists] = useState(false);
+  const [memoSyncFolder, setMemoSyncFolder] = useState('');
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contentRef = useRef('');
+  const selectedDateRef = useRef(selectedDate);
 
   const isToday = selectedDate === today;
+
+  useEffect(() => {
+    selectedDateRef.current = selectedDate;
+  }, [selectedDate]);
+
+  useEffect(() => {
+    getSetting(SETTING_KEYS.MEMO_SYNC_FOLDER).then(val => {
+      setMemoSyncFolder(val ?? '');
+    });
+  }, []);
 
   const goToPrevDay = () => {
     const d = new Date(selectedDate + 'T00:00:00');
@@ -35,6 +51,7 @@ export default function Memo() {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     setSaveStatus('idle');
     setContent('');
+    contentRef.current = '';
 
     async function loadMemo() {
       try {
@@ -50,6 +67,7 @@ export default function Memo() {
         ]);
         if (rows.length > 0) {
           setContent(rows[0].content);
+          contentRef.current = rows[0].content;
           setSaveStatus('saved');
         } else {
           setSaveStatus('idle');
@@ -61,6 +79,38 @@ export default function Memo() {
     }
     loadMemo();
   }, [selectedDate]);
+
+  // Quill連携: 1.5秒ごとに共有ファイルのmtimeを確認し、外部変更を取り込む
+  useEffect(() => {
+    if (!memoSyncFolder) return;
+
+    let lastMtime = 0;
+
+    const poll = async () => {
+      const date = selectedDateRef.current;
+      const filePath = `${memoSyncFolder}/${date}.md`.replace(/\\/g, '/');
+      try {
+        const mtime = await invoke<number | null>('get_file_mtime', { path: filePath });
+        if (!mtime || mtime === lastMtime) return;
+        lastMtime = mtime;
+        const fileContent = await invoke<string>('read_text_file', { path: filePath });
+        if (fileContent === contentRef.current) return;
+        contentRef.current = fileContent;
+        setContent(fileContent);
+        setSaveStatus('saved');
+        await executeDb(
+          `INSERT INTO daily_memos (date, content) VALUES (?, ?)
+           ON CONFLICT(date) DO UPDATE SET content=excluded.content, updated_at=CURRENT_TIMESTAMP`,
+          [date, fileContent]
+        );
+      } catch {
+        // ファイル未存在またはエラーは無視
+      }
+    };
+
+    const interval = setInterval(poll, 1500);
+    return () => clearInterval(interval);
+  }, [memoSyncFolder]);
 
   const saveMemo = async (newContent: string) => {
     setSaveStatus('saving');
@@ -80,11 +130,17 @@ export default function Memo() {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
     setContent(newContent);
+    contentRef.current = newContent;
     setSaveStatus('typing');
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      saveMemo(newContent);
+    debounceTimer.current = setTimeout(async () => {
+      await saveMemo(newContent);
+      pushMemo(selectedDate, newContent);
+      if (memoSyncFolder) {
+        const filePath = `${memoSyncFolder}/${selectedDate}.md`.replace(/\\/g, '/');
+        invoke('write_text_file', { path: filePath, content: newContent }).catch(console.error);
+      }
     }, 1000);
   };
 

@@ -222,6 +222,18 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "add_sync_id_columns",
+            sql: "
+            ALTER TABLE tasks ADD COLUMN sync_id TEXT;
+            ALTER TABLE task_checklist ADD COLUMN sync_id TEXT;
+            ALTER TABLE daily_memos ADD COLUMN sync_id TEXT;
+            ALTER TABLE reports_daily ADD COLUMN sync_id TEXT;
+            ALTER TABLE reports_weekly ADD COLUMN sync_id TEXT;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

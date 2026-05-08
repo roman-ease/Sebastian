@@ -14,8 +14,9 @@ import WeeklyReport from './pages/WeeklyReport';
 import Settings from './pages/Settings';
 import Search from './pages/Search';
 import { getSetting, SETTING_KEYS } from './lib/settings';
-import { selectDb } from './lib/db';
+import { selectDb, ensureSyncIdColumns } from './lib/db';
 import { loadAndApplyTheme } from './lib/theme';
+import { pullFromSupabase } from './lib/supabase';
 
 function AppRoutes() {
   const navigate = useNavigate();
@@ -24,6 +25,11 @@ function AppRoutes() {
   // テーマ初期適用
   useEffect(() => {
     loadAndApplyTheme().catch(console.warn);
+  }, []);
+
+  // 起動時: sync_id カラム保証 → Supabase pull
+  useEffect(() => {
+    ensureSyncIdColumns().then(() => pullFromSupabase());
   }, []);
 
   useEffect(() => {

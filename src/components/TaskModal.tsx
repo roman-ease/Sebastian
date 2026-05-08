@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Check, Trash2, Plus } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
+import { pushChecklist } from '../lib/supabase';
 
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'hold';
 export type TaskPriority = 'none' | 'low' | 'medium' | 'high';
@@ -81,11 +82,13 @@ export function TaskModal({ initialData, onSave, onClose, mode, taskId }: Props)
     const newChecked = item.checked ? 0 : 1;
     await executeDb('UPDATE task_checklist SET checked=? WHERE id=?', [newChecked, item.id]);
     setChecklist(list => list.map(i => i.id === item.id ? { ...i, checked: newChecked } : i));
+    if (taskId != null) pushChecklist(taskId);
   };
 
   const deleteItem = async (id: number) => {
     await executeDb('DELETE FROM task_checklist WHERE id=?', [id]);
     setChecklist(list => list.filter(i => i.id !== id));
+    if (taskId != null) pushChecklist(taskId);
   };
 
   const addItem = async () => {
@@ -99,6 +102,7 @@ export function TaskModal({ initialData, onSave, onClose, mode, taskId }: Props)
     setChecklist(list => [...list, { id: result.lastInsertId as number, text, checked: 0 }]);
     setNewItemText('');
     setShowNewItem(false);
+    pushChecklist(taskId);
   };
 
   const checkedCount = checklist.filter(i => i.checked).length;

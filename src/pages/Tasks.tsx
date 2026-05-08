@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp, Pin, PinOff, Search, X, ArrowUp, ArrowDown, Check } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
 import { logTaskAction } from '../lib/taskLogs';
+import { pushTask, supabase } from '../lib/supabase';
 import { TaskModal, type TaskFormData, type TaskStatus, type TaskPriority } from '../components/TaskModal';
 import { OrnateCard, PageHeader } from '../components/ClassicUI';
 
@@ -174,6 +175,7 @@ export default function Tasks() {
         afterJson: data,
         actorType: 'user',
       });
+      pushTask(result.lastInsertId as number);
       setModalMode(null);
       loadTasks();
     } catch (e: unknown) {
@@ -197,6 +199,7 @@ export default function Tasks() {
         afterJson: data,
         actorType: 'user',
       });
+      pushTask(editingTask.id);
       setModalMode(null);
       setEditingTask(null);
       loadTasks();
@@ -220,6 +223,7 @@ export default function Tasks() {
         afterJson: { status: newStatus },
         actorType: 'user',
       });
+      pushTask(task.id);
       loadTasks();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -239,6 +243,7 @@ export default function Tasks() {
         actionType: newPinned ? 'pin' : 'unpin',
         actorType: 'user',
       });
+      pushTask(task.id);
       loadTasks();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -258,6 +263,7 @@ export default function Tasks() {
         beforeJson: { archived: 0, status: task.status },
         actorType: 'user',
       });
+      pushTask(task.id);
       setArchivingId(null);
       loadTasks();
     } catch (e: unknown) {
@@ -280,6 +286,7 @@ export default function Tasks() {
         afterJson: { archived: 0 },
         actorType: 'user',
       });
+      pushTask(task.id);
       loadTasks();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -290,8 +297,11 @@ export default function Tasks() {
   const handleDelete = async (id: number) => {
     const task = tasks.find(t => t.id === id) ?? archivedTasks.find(t => t.id === id);
     try {
+      const syncRows = await selectDb<{ sync_id: string | null }>('SELECT sync_id FROM tasks WHERE id=?', [id]);
+      const syncId = syncRows[0]?.sync_id;
       await executeDb('DELETE FROM task_checklist WHERE task_id=?', [id]);
       await executeDb('DELETE FROM tasks WHERE id=?', [id]);
+      if (syncId) supabase.from('tasks').delete().eq('id', syncId);
       await logTaskAction({
         taskId: id,
         actionType: 'delete',

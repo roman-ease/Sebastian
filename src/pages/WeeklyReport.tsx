@@ -4,6 +4,7 @@ import { ja } from 'date-fns/locale';
 import { invoke } from '@tauri-apps/api/core';
 import { Sparkles, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
+import { pushWeeklyReport } from '../lib/supabase';
 import { OrnateCard, CardHeading } from '../components/ClassicUI';
 import { generateWeeklyReport, type TaskLogEntry, type TaskEntry } from '../lib/ai';
 import { getSetting, SETTING_KEYS } from '../lib/settings';
@@ -115,6 +116,7 @@ export default function WeeklyReport() {
         await invoke<void>('write_text_file', { path: filePath, content });
       }
 
+      pushWeeklyReport(weekStartStr, content);
       setSavedContent(content);
       setDraft('');
       setPageState('saved');

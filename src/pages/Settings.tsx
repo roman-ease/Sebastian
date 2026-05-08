@@ -47,6 +47,7 @@ interface SettingsForm {
   reminderTime: string;
   reminderWeekdaysOnly: boolean;
   syncFolder: string;
+  memoSyncFolder: string;
 }
 
 export default function Settings() {
@@ -74,6 +75,7 @@ export default function Settings() {
     reminderTime: '18:00',
     reminderWeekdaysOnly: true,
     syncFolder: '',
+    memoSyncFolder: '',
   });
   const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
   const [showAddProvider, setShowAddProvider] = useState(false);
@@ -103,7 +105,7 @@ export default function Settings() {
         groqKey, groqModel, openrouterKey, openrouterModel,
         lmstudioEndpoint, lmstudioModel,
         reminderEnabled, reminderTime, reminderWeekdaysOnly,
-        syncFolderSetting, lastSyncAtSetting] = await Promise.all([
+        syncFolderSetting, lastSyncAtSetting, memoSyncFolderSetting] = await Promise.all([
         getSetting(SETTING_KEYS.DAILY_REPORT_PATH),
         getSetting(SETTING_KEYS.WEEKLY_REPORT_PATH),
         getSetting(SETTING_KEYS.GLOBAL_SHORTCUT),
@@ -129,6 +131,7 @@ export default function Settings() {
         getSetting(SETTING_KEYS.REMINDER_WEEKDAYS_ONLY),
         getSetting(SETTING_KEYS.SYNC_FOLDER),
         getSetting(SETTING_KEYS.LAST_SYNC_AT),
+        getSetting(SETTING_KEYS.MEMO_SYNC_FOLDER),
       ]);
       const syncFolderVal = syncFolderSetting ?? '';
       setLastSyncAt(lastSyncAtSetting ?? null);
@@ -163,12 +166,13 @@ export default function Settings() {
         reminderTime: reminderTime ?? '18:00',
         reminderWeekdaysOnly: reminderWeekdaysOnly !== 'false',
         syncFolder: syncFolderVal,
+        memoSyncFolder: memoSyncFolderSetting ?? '',
       });
     }
     load();
   }, []);
 
-  const pickFolder = async (field: 'dailyReportPath' | 'weeklyReportPath' | 'syncFolder') => {
+  const pickFolder = async (field: 'dailyReportPath' | 'weeklyReportPath' | 'syncFolder' | 'memoSyncFolder') => {
     const selected = await open({ directory: true, multiple: false });
     if (selected && typeof selected === 'string') {
       setForm(f => ({ ...f, [field]: selected }));
@@ -365,6 +369,7 @@ export default function Settings() {
         setSetting(SETTING_KEYS.REMINDER_TIME, form.reminderTime),
         setSetting(SETTING_KEYS.REMINDER_WEEKDAYS_ONLY, String(form.reminderWeekdaysOnly)),
         setSetting(SETTING_KEYS.SYNC_FOLDER, form.syncFolder),
+        setSetting(SETTING_KEYS.MEMO_SYNC_FOLDER, form.memoSyncFolder),
       ]);
 
       try {
@@ -1046,6 +1051,42 @@ export default function Settings() {
               {exportMsg}
             </div>
           )}
+        </div>
+      </OrnateCard>
+
+      {/* Quill連携 */}
+      <OrnateCard className="p-6">
+        <div className="space-y-4">
+          <CardHeading>Quill連携</CardHeading>
+          <p className="text-xs text-sebastian-lightgray -mt-2">
+            指定フォルダに当日のメモを <span className="font-mono">YYYY-MM-DD.md</span> として書き出します。<br />
+            QuillでそのファイルをOpenすると双方向リアルタイム同期になります。
+          </p>
+          <div className="space-y-2">
+            <label className="block text-sm text-sebastian-gray">メモ同期フォルダ</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none cursor-pointer"
+                placeholder="フォルダを選択してください"
+                value={form.memoSyncFolder}
+                onClick={() => pickFolder('memoSyncFolder')}
+              />
+              <button
+                onClick={() => pickFolder('memoSyncFolder')}
+                className="flex items-center gap-1.5 px-3 py-2 bg-sebastian-border/30 text-sebastian-gray rounded-lg hover:bg-sebastian-border/50 transition-colors text-sm font-serif"
+              >
+                <FolderOpen size={16} />
+                参照
+              </button>
+            </div>
+            {form.memoSyncFolder && (
+              <p className="text-xs text-sebastian-lightgray">
+                例: {form.memoSyncFolder}/{format(new Date(), 'yyyy-MM-dd')}.md
+              </p>
+            )}
+          </div>
         </div>
       </OrnateCard>
 

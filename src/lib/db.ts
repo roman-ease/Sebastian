@@ -34,3 +34,16 @@ export async function closeDb(): Promise<void> {
     dbInstance = null;
   }
 }
+
+// マイグレーションで一部のテーブルに sync_id が追加されなかった場合のフォールバック
+export async function ensureSyncIdColumns(): Promise<void> {
+  const db = await getDb();
+  const tables = ['tasks', 'task_checklist', 'daily_memos', 'reports_daily', 'reports_weekly'];
+  for (const table of tables) {
+    try {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN sync_id TEXT`);
+    } catch {
+      // already exists — ignore
+    }
+  }
+}
