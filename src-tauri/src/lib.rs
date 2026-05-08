@@ -55,6 +55,51 @@ fn get_file_mtime(path: String) -> Option<u64> {
         .map(|d| d.as_secs())
 }
 
+#[tauri::command]
+fn launch_local_ai(server: String) -> Result<String, String> {
+    use std::process::Command;
+
+    match server.as_str() {
+        "ollama" => {
+            if cfg!(target_os = "macos") {
+                Command::new("open")
+                    .args(["-a", "Ollama"])
+                    .spawn()
+                    .map_err(|e| format!("Ollama.app が見つかりません。Ollama をインストールしてください: {e}"))?;
+                Ok("Ollama を起動しました".to_string())
+            } else {
+                Command::new("ollama")
+                    .arg("serve")
+                    .spawn()
+                    .map_err(|e| format!("ollama コマンドが見つかりません。Ollama をインストールしてください: {e}"))?;
+                Ok("Ollama サーバーを起動しました".to_string())
+            }
+        }
+        "lmstudio" => {
+            if cfg!(target_os = "macos") {
+                let home = std::env::var("HOME").unwrap_or_default();
+                let lms_cli = format!("{home}/.lmstudio/bin/lms");
+                if std::path::Path::new(&lms_cli).exists() {
+                    Command::new(&lms_cli)
+                        .args(["server", "start"])
+                        .spawn()
+                        .map_err(|e| format!("LM Studio サーバーの起動に失敗しました: {e}"))?;
+                    Ok("LM Studio サーバーを起動しました".to_string())
+                } else {
+                    Command::new("open")
+                        .args(["-a", "LM Studio"])
+                        .spawn()
+                        .map_err(|e| format!("LM Studio が見つかりません。LM Studio をインストールしてください: {e}"))?;
+                    Ok("LM Studio を開きました。アプリ内の「Local Server」タブでサーバーを開始してください。".to_string())
+                }
+            } else {
+                Err("LM Studio の自動起動は macOS のみ対応しています".to_string())
+            }
+        }
+        _ => Err(format!("不明なサーバー種別: {server}"))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -198,7 +243,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet, write_text_file, read_text_file,
-            get_db_path, copy_file, file_exists, get_file_mtime
+            get_db_path, copy_file, file_exists, get_file_mtime,
+            launch_local_ai
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
-import { FolderOpen, CheckCircle, AlertCircle, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Upload, Download, Clock, FileDown, Pencil, Trash2, Plus, X } from 'lucide-react';
+import { FolderOpen, CheckCircle, AlertCircle, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Upload, Download, Clock, FileDown, Pencil, Trash2, Plus, X, Play } from 'lucide-react';
 import { getSetting, setSetting, SETTING_KEYS } from '../lib/settings';
 import { PageHeader, OrnateCard, CardHeading } from '../components/ClassicUI';
 import { registerShortcut } from '../lib/shortcut';
@@ -91,6 +91,8 @@ export default function Settings() {
   const [errorMsg, setErrorMsg] = useState('');
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [launching, setLaunching] = useState(false);
+  const [launchMsg, setLaunchMsg] = useState<{ ok: boolean; msg: string } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
@@ -175,6 +177,23 @@ export default function Settings() {
           setSyncFolderDbTime(mtime ? format(new Date(mtime * 1000), 'M/d HH:mm', { locale: ja }) : null);
         }).catch(() => setSyncFolderDbTime(null));
       }
+    }
+  };
+
+  const handleLaunch = async (server: 'ollama' | 'lmstudio') => {
+    setLaunching(true);
+    setLaunchMsg(null);
+    setTestStatus(null);
+    try {
+      const msg = await invoke<string>('launch_local_ai', { server });
+      setLaunchMsg({ ok: true, msg });
+      // サーバー起動を待ってから接続テストを自動実行
+      await new Promise(r => setTimeout(r, 3000));
+      await handleTest();
+    } catch (e) {
+      setLaunchMsg({ ok: false, msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setLaunching(false);
     }
   };
 
@@ -670,6 +689,14 @@ export default function Settings() {
                   value={form.lmstudioModel}
                   onChange={e => setForm(f => ({ ...f, lmstudioModel: e.target.value }))} />
               </div>
+              <button
+                onClick={() => handleLaunch('lmstudio')}
+                disabled={launching || testing}
+                className="flex items-center gap-2 px-4 py-2 bg-sebastian-navy text-white rounded-lg hover:bg-sebastian-dark transition-colors text-sm disabled:opacity-50 font-serif"
+              >
+                <Play size={13} className={launching ? 'animate-pulse' : ''} />
+                {launching ? '起動中...' : 'サーバーを起動する'}
+              </button>
             </div>
           )}
 
@@ -695,6 +722,14 @@ export default function Settings() {
                   onChange={e => setForm(f => ({ ...f, ollamaModel: e.target.value }))}
                 />
               </div>
+              <button
+                onClick={() => handleLaunch('ollama')}
+                disabled={launching || testing}
+                className="flex items-center gap-2 px-4 py-2 bg-sebastian-navy text-white rounded-lg hover:bg-sebastian-dark transition-colors text-sm disabled:opacity-50 font-serif"
+              >
+                <Play size={13} className={launching ? 'animate-pulse' : ''} />
+                {launching ? '起動中...' : 'サーバーを起動する'}
+              </button>
             </div>
           )}
 
@@ -703,12 +738,26 @@ export default function Settings() {
             <div className="space-y-2">
               <button
                 onClick={handleTest}
-                disabled={testing}
+                disabled={testing || launching}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-sebastian-text rounded-lg hover:bg-gray-200 transition-colors text-sm disabled:opacity-50"
               >
                 <RefreshCw size={14} className={testing ? 'animate-spin' : ''} />
                 {testing ? '確認中...' : '接続テスト'}
               </button>
+
+              {launchMsg && (
+                <div className={`flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm whitespace-pre-wrap ${
+                  launchMsg.ok
+                    ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                    : 'bg-red-50 text-red-700 border border-red-100'
+                }`}>
+                  {launchMsg.ok
+                    ? <Play size={15} className="flex-shrink-0 mt-0.5" />
+                    : <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
+                  }
+                  {launchMsg.msg}
+                </div>
+              )}
 
               {testStatus && (
                 <div className={`flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm ${
