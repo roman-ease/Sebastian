@@ -2,6 +2,9 @@ import { useEffect, useState, useRef } from 'react';
 import { format } from 'date-fns';
 import { X, Pencil, Check, Trash2, Plus, History, Sparkles, Bot, Link2 } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
+import { logTaskAction } from '../lib/taskLogs';
+import { pushTask, pushChecklist } from '../lib/supabase';
+import { TaskModal, type TaskFormData, type TaskStatus, type TaskPriority } from './TaskModal';
 import { PRIORITY_COLOR, PRIORITY_LABEL, STATUS_LABEL } from '../lib/constants';
 import {
   generateChecklist,
@@ -114,8 +117,11 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
   const [aiComment, setAiComment] = useState<string | null>(null);
   const [generatingComment, setGeneratingComment] = useState(false);
 
-  useEffect(() => {
-    Promise.all([
+  // 編集モーダル切替
+  const [editing, setEditing] = useState(false);
+
+  const loadAll = () => {
+    return Promise.all([
       selectDb<TaskDetail>(
         'SELECT id, title, description, notes, priority, status, start_date, due_date, category, progress FROM tasks WHERE id = ?',
         [taskId]
@@ -135,28 +141,61 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
       setChecklist(checkRows);
       setLogs(logRows);
     });
+  };
+
+  useEffect(() => {
+    loadAll();
   }, [taskId]);
 
   useEffect(() => {
     if (showNewItem) newItemRef.current?.focus();
   }, [showNewItem]);
 
+  const reloadLogs = async () => {
+    const rows = await selectDb<TaskLog>(
+      'SELECT id, action_type, before_json, after_json, actor_type, created_at FROM task_logs WHERE task_id = ? ORDER BY created_at DESC LIMIT 30',
+      [taskId]
+    );
+    setLogs(rows);
+  };
+
   // ─── ノート ──────────────────────────────────────────────────
   const saveNotes = async () => {
     if (!task) return;
-    await executeDb('UPDATE tasks SET notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', [notesDraft || null, task.id]);
-    setTask(t => t ? { ...t, notes: notesDraft || null } : t);
+    const newNotes = notesDraft || null;
+    if (newNotes === task.notes) { setEditingNotes(false); return; }
+    await executeDb('UPDATE tasks SET notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', [newNotes, task.id]);
+    await logTaskAction({
+      taskId: task.id,
+      actionType: 'update',
+      beforeJson: { notes: task.notes },
+      afterJson: { notes: newNotes },
+      actorType: 'user',
+    });
+    pushTask(task.id);
+    setTask(t => t ? { ...t, notes: newNotes } : t);
     setEditingNotes(false);
+    reloadLogs();
   };
 
   // ─── 進捗率 ──────────────────────────────────────────────────
   const saveProgress = async (value?: number) => {
     if (!task) return;
     const clamped = Math.min(100, Math.max(0, value ?? progressDraft));
+    if (clamped === task.progress) { setProgressDraft(clamped); setEditingProgress(false); return; }
     await executeDb('UPDATE tasks SET progress=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', [clamped, task.id]);
+    await logTaskAction({
+      taskId: task.id,
+      actionType: 'update',
+      beforeJson: { progress: task.progress },
+      afterJson: { progress: clamped },
+      actorType: 'user',
+    });
+    pushTask(task.id);
     setTask(t => t ? { ...t, progress: clamped } : t);
     setProgressDraft(clamped);
     setEditingProgress(false);
+    reloadLogs();
   };
 
   // チェックリスト連動で進捗率を更新
@@ -171,11 +210,13 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
     const newChecked = item.checked ? 0 : 1;
     await executeDb('UPDATE task_checklist SET checked=? WHERE id=?', [newChecked, item.id]);
     setChecklist(list => list.map(i => i.id === item.id ? { ...i, checked: newChecked } : i));
+    pushChecklist(taskId);
   };
 
   const deleteItem = async (id: number) => {
     await executeDb('DELETE FROM task_checklist WHERE id=?', [id]);
     setChecklist(list => list.filter(i => i.id !== id));
+    pushChecklist(taskId);
   };
 
   const addItem = async () => {
@@ -189,6 +230,7 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
     setChecklist(list => [...list, { id: result.lastInsertId as number, text, checked: 0 }]);
     setNewItemText('');
     setShowNewItem(false);
+    pushChecklist(taskId);
   };
 
   // AI チェックリスト生成
@@ -204,6 +246,7 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
         );
         setChecklist(prev => [...prev, { id: result.lastInsertId as number, text: items[i], checked: 0 }]);
       }
+      if (items.length > 0) pushChecklist(taskId);
     } catch (e) {
       console.error(e);
     } finally {
@@ -235,10 +278,15 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
   };
 
   const applyProxyCheck = async () => {
-    for (const text of proxyCheckSuggestions) {
-      const item = checklist.find(i => i.text === text && !i.checked);
-      if (item) await toggleItem(item);
+    const targets = proxyCheckSuggestions
+      .map(text => checklist.find(i => i.text === text && !i.checked))
+      .filter((i): i is ChecklistItem => i != null);
+    for (const item of targets) {
+      await executeDb('UPDATE task_checklist SET checked=1 WHERE id=?', [item.id]);
     }
+    const targetIds = new Set(targets.map(i => i.id));
+    setChecklist(list => list.map(i => targetIds.has(i.id) ? { ...i, checked: 1 } : i));
+    if (targets.length > 0) pushChecklist(taskId);
     setShowProxyConfirm(false);
     setProxyCheckSuggestions([]);
   };
@@ -264,9 +312,29 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
     }
   };
 
+  // ─── 編集モーダルからの保存 ───────────────────────────────────
+  const handleEditSave = async (data: TaskFormData) => {
+    if (!task) return;
+    await executeDb(
+      'UPDATE tasks SET title=?, description=?, notes=?, status=?, priority=?, start_date=?, due_date=?, category=?, progress=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+      [data.title, data.description || null, data.notes || null, data.status, data.priority, data.start_date || null, data.due_date || null, data.category || null, data.progress, task.id]
+    );
+    await logTaskAction({
+      taskId: task.id,
+      actionType: task.status !== data.status ? 'status_change' : 'update',
+      beforeJson: task,
+      afterJson: data,
+      actorType: 'user',
+    });
+    pushTask(task.id);
+    setEditing(false);
+    loadAll();
+  };
+
   const checkedCount = checklist.filter(i => i.checked).length;
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.35)' }}
@@ -283,19 +351,30 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
         <span className="absolute bottom-2.5 left-2.5 w-4 h-4 border-b border-l border-sebastian-gold/30 pointer-events-none rounded-bl-sm" />
         <span className="absolute bottom-2.5 right-2.5 w-4 h-4 border-b border-r border-sebastian-gold/30 pointer-events-none rounded-br-sm" />
 
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-sebastian-lightgray hover:text-sebastian-gray transition-colors"
-        >
-          <X size={16} />
-        </button>
+        <div className="absolute top-4 right-4 flex items-center gap-2.5">
+          {task && (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-sebastian-lightgray hover:text-sebastian-gold transition-colors"
+              title="タスクを編集"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-sebastian-lightgray hover:text-sebastian-gray transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
 
         {!task ? (
           <p className="text-sm text-sebastian-lightgray font-serif">読み込み中...</p>
         ) : (
           <div className="space-y-3">
             {/* タイトル */}
-            <h2 className="text-base font-serif text-sebastian-navy pr-6 leading-snug">{task.title}</h2>
+            <h2 className="text-base font-serif text-sebastian-navy pr-12 leading-snug">{task.title}</h2>
 
             {/* バッジ */}
             <div className="flex flex-wrap gap-2">
@@ -611,5 +690,28 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
         )}
       </div>
     </div>
+
+    {/* 編集モーダル（Peek の上に重ねる。Peek のオーバーレイの外に置いて
+        バックドロップクリックが Peek まで伝播して両方閉じるのを防ぐ） */}
+    {editing && task && (
+      <TaskModal
+        mode="edit"
+        taskId={task.id}
+        initialData={{
+          title: task.title,
+          description: task.description ?? '',
+          notes: task.notes ?? '',
+          status: task.status as TaskStatus,
+          priority: task.priority as TaskPriority,
+          start_date: task.start_date ?? '',
+          due_date: task.due_date ?? '',
+          category: task.category ?? '',
+          progress: task.progress,
+        }}
+        onSave={handleEditSave}
+        onClose={() => { setEditing(false); loadAll(); }}
+      />
+    )}
+    </>
   );
 }

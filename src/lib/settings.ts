@@ -1,4 +1,5 @@
 import { selectDb, executeDb } from './db';
+import { getSecret, setSecret } from './secrets';
 
 export const SETTING_KEYS = {
   DAILY_REPORT_PATH: 'daily_report_path',
@@ -33,7 +34,20 @@ export const SETTING_KEYS = {
   SUPABASE_KEY: 'supabase_key',
 } as const;
 
+// 機密値（API キー・Supabase 匿名キー）は平文 SQLite ではなく OS キーチェーンに置く。
+// getSetting / setSetting がこの集合のキーをキーチェーンへ透過的に振り分けるため、
+// 呼び出し側（ai.ts / Settings.tsx / supabase.ts）は無改修で機密がキーチェーン管理になる。
+export const SECRET_KEYS: ReadonlySet<string> = new Set<string>([
+  SETTING_KEYS.GEMINI_API_KEY,
+  SETTING_KEYS.CLAUDE_API_KEY,
+  SETTING_KEYS.OPENAI_API_KEY,
+  SETTING_KEYS.GROQ_API_KEY,
+  SETTING_KEYS.OPENROUTER_API_KEY,
+  SETTING_KEYS.SUPABASE_KEY,
+]);
+
 export async function getSetting(key: string): Promise<string | null> {
+  if (SECRET_KEYS.has(key)) return getSecret(key);
   try {
     const rows = await selectDb<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key]);
     return rows.length > 0 ? rows[0].value : null;
@@ -43,10 +57,32 @@ export async function getSetting(key: string): Promise<string | null> {
 }
 
 export async function setSetting(key: string, value: string): Promise<void> {
+  if (SECRET_KEYS.has(key)) {
+    await setSecret(key, value);
+    // 旧バージョンが平文で書いた行が残っていれば除去
+    try { await executeDb('DELETE FROM settings WHERE key = ?', [key]); } catch { /* ignore */ }
+    return;
+  }
   await executeDb(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     [key, value]
   );
+}
+
+// 既存ユーザーの平文キーを起動時に一度だけキーチェーンへ移送し、DB から消す。
+// 値が空でも DB 行があれば掃除する。getSetting がキーチェーンを見るようになるので、
+// 移送後はそちらが正となる（pull で supabase_key を読む前に呼ぶこと）。
+export async function migrateSecretsToKeychain(): Promise<void> {
+  for (const key of SECRET_KEYS) {
+    try {
+      const rows = await selectDb<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key]);
+      if (!rows.length) continue;
+      if (rows[0].value) await setSecret(key, rows[0].value);
+      await executeDb('DELETE FROM settings WHERE key = ?', [key]);
+    } catch (e) {
+      console.error('[secrets] migrate failed:', key, e);
+    }
+  }
 }
 
 export async function getAllSettings(): Promise<Record<string, string>> {

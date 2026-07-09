@@ -100,6 +100,42 @@ fn launch_local_ai(server: String) -> Result<String, String> {
     }
 }
 
+// ── OS キーチェーンによる機密値ストア ─────────────────────────────────────────
+// API キー・Supabase 匿名キーを平文 SQLite ではなく OS の資格情報ストアへ置く。
+const KEYRING_SERVICE: &str = "com.roman-ease.sebastian";
+
+#[tauri::command]
+fn set_secret(key: String, value: String) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &key).map_err(|e| e.to_string())?;
+    if value.is_empty() {
+        // 空文字はクリア。存在しなくてもエラーにしない。
+        return match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        };
+    }
+    entry.set_password(&value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_secret(key: String) -> Result<Option<String>, String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &key).map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn delete_secret(key: String) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &key).map_err(|e| e.to_string())?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -256,7 +292,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet, write_text_file, read_text_file,
             get_db_path, copy_file, file_exists, get_file_mtime,
-            launch_local_ai
+            launch_local_ai,
+            set_secret, get_secret, delete_secret
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,7 +6,7 @@ import { AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { executeDb, selectDb } from '../lib/db';
 import { getSetting, SETTING_KEYS } from '../lib/settings';
-import { pushMemo } from '../lib/supabase';
+import { pushMemo, markEditing, clearEditing } from '../lib/supabase';
 import { PageHeader } from '../components/ClassicUI';
 
 export default function Memo() {
@@ -24,6 +24,11 @@ export default function Memo() {
 
   useEffect(() => {
     selectedDateRef.current = selectedDate;
+  }, [selectedDate]);
+
+  // 日付切替・アンマウント時に編集中フラグを掃除（残ると pull がその日付を恒久スキップする）
+  useEffect(() => {
+    return () => clearEditing('daily_memos', selectedDate);
   }, [selectedDate]);
 
   useEffect(() => {
@@ -132,11 +137,14 @@ export default function Memo() {
     setContent(newContent);
     contentRef.current = newContent;
     setSaveStatus('typing');
+    // 入力中はこの日付の行を pull の上書き対象から外す（未 push 本文の保護）
+    markEditing('daily_memos', selectedDate);
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(async () => {
       await saveMemo(newContent);
       pushMemo(selectedDate, newContent);
+      clearEditing('daily_memos', selectedDate);
       if (memoSyncFolder) {
         const filePath = `${memoSyncFolder}/${selectedDate}.md`.replace(/\\/g, '/');
         invoke('write_text_file', { path: filePath, content: newContent }).catch(console.error);

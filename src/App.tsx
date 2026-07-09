@@ -15,6 +15,7 @@ import Settings from './pages/Settings';
 import Search from './pages/Search';
 import { getSetting, SETTING_KEYS } from './lib/settings';
 import { selectDb, ensureSyncIdColumns } from './lib/db';
+import { migrateSecretsToKeychain } from './lib/settings';
 import { loadAndApplyTheme } from './lib/theme';
 import { pullFromSupabase } from './lib/supabase';
 
@@ -27,9 +28,12 @@ function AppRoutes() {
     loadAndApplyTheme().catch(console.warn);
   }, []);
 
-  // 起動時: sync_id カラム保証 → Supabase pull → 定期ポーリング
+  // 起動時: sync_id カラム保証 → 平文キーをキーチェーンへ移送 → Supabase pull → 定期ポーリング
+  // （pull は supabase_key を読むため、移送を pull より前に終わらせる）
   useEffect(() => {
-    ensureSyncIdColumns().then(() => pullFromSupabase());
+    ensureSyncIdColumns()
+      .then(() => migrateSecretsToKeychain())
+      .then(() => pullFromSupabase());
     const interval = setInterval(() => pullFromSupabase(), 60_000);
     return () => clearInterval(interval);
   }, []);

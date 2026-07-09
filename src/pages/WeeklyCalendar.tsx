@@ -267,7 +267,7 @@ export default function WeeklyCalendar() {
   return (
     <div className="space-y-4">
       {peekTaskId !== null && (
-        <TaskPeekModal taskId={peekTaskId} onClose={() => setPeekTaskId(null)} />
+        <TaskPeekModal taskId={peekTaskId} onClose={() => { setPeekTaskId(null); loadWeekData(); }} />
       )}
 
       {/* ─── ヘッダー ─── */}

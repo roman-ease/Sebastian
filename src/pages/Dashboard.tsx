@@ -42,64 +42,65 @@ export default function Dashboard() {
   const today = format(new Date(), 'yyyy-MM-dd');
   const todayLabel = format(new Date(), 'M月d日（E）', { locale: ja });
 
-  useEffect(() => {
-    async function loadStats() {
-      try {
-        const [countResult, memoResult, todayTaskResult, highResult, reportResult, pinnedResult, categoryResult] = await Promise.all([
-          selectDb<{ count: number }>(
-            "SELECT COUNT(*) as count FROM tasks WHERE status != 'done' AND archived = 0"
-          ),
-          selectDb<{ content: string }>(
-            'SELECT content FROM daily_memos WHERE date = ?',
-            [today]
-          ),
-          selectDb<TaskSummary>(
-            `SELECT id, title, status, priority, due_date, progress,
-              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
-              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
-             FROM tasks WHERE due_date = ? AND status != 'done' AND archived = 0 ORDER BY priority DESC`,
-            [today]
-          ),
-          selectDb<TaskSummary>(
-            `SELECT id, title, status, priority, due_date, progress,
-              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
-              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
-             FROM tasks WHERE priority = 'high' AND status != 'done' AND archived = 0 ORDER BY created_at DESC LIMIT 5`,
-          ),
-          selectDb<{ id: number }>(
-            'SELECT id FROM reports_daily WHERE date = ?',
-            [today]
-          ),
-          selectDb<TaskSummary>(
-            `SELECT id, title, status, priority, due_date, progress,
-              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
-              (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
-             FROM tasks WHERE pinned = 1 AND archived = 0 AND status != 'done' ORDER BY priority DESC, due_date ASC`
-          ),
-          selectDb<CategorySummary>(
-            `SELECT
-               COALESCE(category, '未分類') as category,
-               COUNT(*) as total,
-               SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done_count
-             FROM tasks
-             WHERE archived = 0
-             GROUP BY category
-             ORDER BY total DESC
-             LIMIT 8`
-          ),
-        ]);
+  async function loadStats() {
+    try {
+      const [countResult, memoResult, todayTaskResult, highResult, reportResult, pinnedResult, categoryResult] = await Promise.all([
+        selectDb<{ count: number }>(
+          "SELECT COUNT(*) as count FROM tasks WHERE status != 'done' AND archived = 0"
+        ),
+        selectDb<{ content: string }>(
+          'SELECT content FROM daily_memos WHERE date = ?',
+          [today]
+        ),
+        selectDb<TaskSummary>(
+          `SELECT id, title, status, priority, due_date, progress,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+           FROM tasks WHERE due_date = ? AND status != 'done' AND archived = 0 ORDER BY priority DESC`,
+          [today]
+        ),
+        selectDb<TaskSummary>(
+          `SELECT id, title, status, priority, due_date, progress,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+           FROM tasks WHERE priority = 'high' AND status != 'done' AND archived = 0 ORDER BY created_at DESC LIMIT 5`,
+        ),
+        selectDb<{ id: number }>(
+          'SELECT id FROM reports_daily WHERE date = ?',
+          [today]
+        ),
+        selectDb<TaskSummary>(
+          `SELECT id, title, status, priority, due_date, progress,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
+            (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+           FROM tasks WHERE pinned = 1 AND archived = 0 AND status != 'done' ORDER BY priority DESC, due_date ASC`
+        ),
+        selectDb<CategorySummary>(
+          `SELECT
+             COALESCE(category, '未分類') as category,
+             COUNT(*) as total,
+             SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done_count
+           FROM tasks
+           WHERE archived = 0
+           GROUP BY category
+           ORDER BY total DESC
+           LIMIT 8`
+        ),
+      ]);
 
-        setTodoCount(countResult[0]?.count ?? 0);
-        setMemoLength(memoResult[0]?.content?.length ?? null);
-        setTodayTasks(todayTaskResult);
-        setHighPriorityTasks(highResult);
-        setReportExists(reportResult.length > 0);
-        setPinnedTasks(pinnedResult);
-        setCategorySummary(categoryResult);
-      } catch (e) {
-        console.error('Failed to load stats', e);
-      }
+      setTodoCount(countResult[0]?.count ?? 0);
+      setMemoLength(memoResult[0]?.content?.length ?? null);
+      setTodayTasks(todayTaskResult);
+      setHighPriorityTasks(highResult);
+      setReportExists(reportResult.length > 0);
+      setPinnedTasks(pinnedResult);
+      setCategorySummary(categoryResult);
+    } catch (e) {
+      console.error('Failed to load stats', e);
     }
+  }
+
+  useEffect(() => {
     loadStats();
   }, [today]);
 
@@ -123,7 +124,7 @@ export default function Dashboard() {
         <MorningBriefingModal onDismiss={() => setShowBriefing(false)} />
       )}
       {peekTaskId !== null && (
-        <TaskPeekModal taskId={peekTaskId} onClose={() => setPeekTaskId(null)} />
+        <TaskPeekModal taskId={peekTaskId} onClose={() => { setPeekTaskId(null); loadStats(); }} />
       )}
 
       {/* ─── ページヘッダー ─── */}

@@ -26,6 +26,9 @@ tauri-plugin-os = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-dialog = "2"
+# API キーを OS キーチェーン（Windows 資格情報マネージャー / macOS Keychain）へ保存する。
+# Linux 対応が必要になったら "sync-secret-service" feature を追加（dbus 依存が増える）。
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

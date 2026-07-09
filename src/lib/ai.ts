@@ -617,8 +617,11 @@ async function callAIForJson(systemPrompt: string, userMessage: string): Promise
   }
 
   if (provider !== 'disabled') {
-    // Claude, OpenAI, Groq, OpenRouter, LMStudio, custom — use regular text mode
-    return callAI(systemPrompt, userMessage);
+    // Claude / OpenAI / Groq / OpenRouter / LMStudio / custom はテキストモードで返るため、
+    // コードフェンス（```json）や前置き（「以下がJSONです」等）が混ざり、呼び出し側の
+    // JSON.parse が失敗しやすい。Gemini/Ollama と同様に cleanJsonResponse で本体を抽出する。
+    const raw = await callAI(systemPrompt, userMessage);
+    return cleanJsonResponse(raw);
   }
 
   throw new Error('AIプロバイダーが設定されていません');

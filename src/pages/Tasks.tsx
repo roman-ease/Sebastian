@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp, Pin, PinOff, Search, X, ArrowUp, ArrowDown, Check } from 'lucide-react';
+import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp, Pin, PinOff, Search, X, ArrowUp, ArrowDown, Check, Pencil } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
 import { logTaskAction } from '../lib/taskLogs';
-import { pushTask, getSupabaseClient } from '../lib/supabase';
+import { pushTask, pushTaskDelete } from '../lib/supabase';
 import { TaskModal, type TaskFormData, type TaskStatus, type TaskPriority } from '../components/TaskModal';
+import { TaskPeekModal } from '../components/TaskPeekModal';
 import { OrnateCard, PageHeader } from '../components/ClassicUI';
 
 interface Task {
@@ -77,6 +78,7 @@ export default function Tasks() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [peekTaskId, setPeekTaskId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [archivingId, setArchivingId] = useState<number | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -308,7 +310,8 @@ export default function Tasks() {
       await executeDb('DELETE FROM task_checklist WHERE task_id=?', [id]);
       await executeDb('DELETE FROM task_logs WHERE task_id=?', [id]);
       await executeDb('DELETE FROM tasks WHERE id=?', [id]);
-      if (syncId) getSupabaseClient().then(c => c?.from('tasks').delete().eq('id', syncId));
+      // hard-delete ではなく tombstone を送る。hard-delete だと他端末が削除を知れず再 push で復活する。
+      if (syncId) pushTaskDelete(syncId);
       setDeletingId(null);
       loadTasks();
     } catch (e: unknown) {
@@ -331,22 +334,71 @@ export default function Tasks() {
     });
   };
 
+  // 選択は常に表示中の絞り込み結果内に限定する。
+  // 絞り込みを変えて見えなくなったタスクが選択に残ったまま
+  // 一括アーカイブ等が「見えていない行」に効くのを防ぐ。
+  useEffect(() => {
+    setSelectedIds(prev => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(filteredTasks.map(t => t.id));
+      const next = new Set([...prev].filter(id => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredTasks]);
+
+  const allFilteredSelected = filteredTasks.length > 0 && filteredTasks.every(t => selectedIds.has(t.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredTasks.map(t => t.id)));
+    }
+  };
+
   const handleBulkStatusChange = async (status: string) => {
     if (!status || selectedIds.size === 0) return;
-    await Promise.all([...selectedIds].map(id =>
-      executeDb('UPDATE tasks SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', [status, id])
-    ));
-    setSelectedIds(new Set());
-    loadTasks();
+    try {
+      const targets = tasks.filter(t => selectedIds.has(t.id) && t.status !== status);
+      for (const t of targets) {
+        await executeDb('UPDATE tasks SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', [status, t.id]);
+        await logTaskAction({
+          taskId: t.id,
+          actionType: 'status_change',
+          beforeJson: { status: t.status },
+          afterJson: { status },
+          actorType: 'user',
+        });
+        pushTask(t.id);
+      }
+      setSelectedIds(new Set());
+      loadTasks();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`一括ステータス変更に失敗しました: ${msg}`);
+    }
   };
 
   const handleBulkArchive = async () => {
     if (selectedIds.size === 0) return;
-    await Promise.all([...selectedIds].map(id =>
-      executeDb('UPDATE tasks SET archived=1, updated_at=CURRENT_TIMESTAMP WHERE id=?', [id])
-    ));
-    setSelectedIds(new Set());
-    loadTasks();
+    try {
+      const targets = tasks.filter(t => selectedIds.has(t.id));
+      for (const t of targets) {
+        await executeDb('UPDATE tasks SET archived=1, updated_at=CURRENT_TIMESTAMP WHERE id=?', [t.id]);
+        await logTaskAction({
+          taskId: t.id,
+          actionType: 'archive',
+          beforeJson: { archived: 0, status: t.status },
+          actorType: 'user',
+        });
+        pushTask(t.id);
+      }
+      setSelectedIds(new Set());
+      loadTasks();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`一括アーカイブに失敗しました: ${msg}`);
+    }
   };
 
   const hasActiveFilters = searchQuery.trim() !== '' || categoryFilter !== '';
@@ -488,7 +540,25 @@ export default function Tasks() {
             {hasActiveFilters || filter !== 'all' ? '条件に一致するタスクがありません' : 'タスクがありません'}
           </div>
         ) : (
-          <ul className="divide-y divide-sebastian-border/40">
+          <>
+            {/* 全選択ヘッダー（pt は OrnateCard の角飾り top-2.5+w-4 を避けるため深め） */}
+            <div className="flex items-center gap-3 px-5 pt-4 pb-2 border-b border-sebastian-border/40">
+              <div className="flex-shrink-0 cursor-pointer" onClick={toggleSelectAll}>
+                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${allFilteredSelected ? 'border-sebastian-gold/60 bg-sebastian-gold/10' : 'border-sebastian-border hover:border-sebastian-gold/40'}`}>
+                  {allFilteredSelected && <Check size={10} className="text-sebastian-gold" />}
+                </div>
+              </div>
+              <button
+                onClick={toggleSelectAll}
+                className="text-xs text-sebastian-lightgray hover:text-sebastian-gray font-serif transition-colors"
+              >
+                {allFilteredSelected ? '選択を解除' : `表示中の ${filteredTasks.length} 件を選択`}
+              </button>
+              {selectedIds.size > 0 && !allFilteredSelected && (
+                <span className="text-xs text-sebastian-lightgray/70 font-serif">{selectedIds.size} 件選択中</span>
+              )}
+            </div>
+            <ul className="divide-y divide-sebastian-border/40">
             {filteredTasks.map(task => (
               <li key={task.id} className="flex items-center gap-3 px-5 py-4 hover:bg-sebastian-parchment/30 transition-colors group">
                 {/* 一括選択チェックボックス */}
@@ -512,8 +582,9 @@ export default function Tasks() {
                 {/* タスク情報 */}
                 <div className="flex-1 min-w-0">
                   <button
-                    onClick={() => openEdit(task)}
+                    onClick={() => setPeekTaskId(task.id)}
                     className={`block text-sm text-left w-full font-serif hover:underline underline-offset-2 ${task.status === 'done' ? 'line-through text-sebastian-lightgray' : 'text-sebastian-text hover:text-sebastian-navy'}`}
+                    title="詳細を表示"
                   >
                     {task.title}
                   </button>
@@ -611,6 +682,13 @@ export default function Tasks() {
                   ) : (
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
+                        onClick={() => openEdit(task)}
+                        className="p-1.5 text-sebastian-lightgray/60 hover:text-sebastian-navy hover:bg-sebastian-parchment rounded-lg transition-colors"
+                        title="編集"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
                         onClick={() => { setArchivingId(task.id); setDeletingId(null); }}
                         className="p-1.5 text-sebastian-lightgray/60 hover:text-sebastian-navy hover:bg-sebastian-parchment rounded-lg transition-colors"
                         title="アーカイブ"
@@ -629,7 +707,8 @@ export default function Tasks() {
                 </div>
               </li>
             ))}
-          </ul>
+            </ul>
+          </>
         )}
       </OrnateCard>
 
@@ -769,6 +848,12 @@ export default function Tasks() {
           }}
           onSave={handleEdit}
           onClose={() => { setModalMode(null); setEditingTask(null); }}
+        />
+      )}
+      {peekTaskId != null && (
+        <TaskPeekModal
+          taskId={peekTaskId}
+          onClose={() => { setPeekTaskId(null); loadTasks(); }}
         />
       )}
     </div>
