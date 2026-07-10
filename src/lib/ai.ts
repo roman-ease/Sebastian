@@ -770,6 +770,110 @@ ${projectsSummary}
   }
 }
 
+// ─── プロジェクトのタスク一括生成 ──────────────────────────────
+
+export interface ProjectTaskCandidate {
+  title: string;
+  description: string;
+  priority: 'none' | 'low' | 'medium' | 'high';
+  start_date: string | null;
+  due_date: string | null;
+  reason: string;
+}
+
+export interface ProjectPlanInput {
+  name: string;
+  description: string | null;
+  start_date: string | null;
+  target_date: string | null;
+  existingTasks: {
+    title: string;
+    status: string;
+    start_date: string | null;
+    due_date: string | null;
+  }[];
+}
+
+const PROJECT_TASKS_SYSTEM = `あなたはプロジェクト計画の立案を支援する業務アシスタントです。
+プロジェクトの概要・期間・既存タスクをもとに、プロジェクトを完遂するために不足している作業タスクを洗い出してください。
+
+出力形式: JSONのみ（他のテキスト一切なし）
+{"candidates":[{"title":"","description":"","priority":"none|low|medium|high","start_date":"YYYY-MM-DD","due_date":"YYYY-MM-DD","reason":""}]}
+
+ルール:
+- 3〜8件。プロジェクトの流れ（準備→実施→確認→完了）に沿った順で並べる
+- 既存タスクと内容が重複する提案はしない（言い換えただけの重複も不可）
+- title は30文字以内の具体的な作業名
+- description は作業内容の要点を1〜2文で
+- start_date / due_date は必ずプロジェクト期間内に収め、既存タスクの日程と合わせて時系列が自然につながるようにする
+- 今日より前に開始すべきだったタスクは start_date を今日にする
+- プロジェクトに期間情報がない場合のみ start_date / due_date を null にする
+- reason にはそのタスクが必要と判断した理由を簡潔に`;
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export async function generateProjectTasks(
+  input: ProjectPlanInput,
+  today: string
+): Promise<ProjectTaskCandidate[]> {
+  const taskSummary = input.existingTasks.length > 0
+    ? input.existingTasks.map(t =>
+        `- ${t.title}（${t.status}${t.start_date || t.due_date ? ` / ${t.start_date ?? '?'} 〜 ${t.due_date ?? '?'}` : ''}）`
+      ).join('\n')
+    : '（登録済みタスクなし）';
+
+  const userMessage = `今日の日付: ${today}
+
+【プロジェクト】
+名称: ${input.name}
+概要: ${input.description?.trim() || '（未設定）'}
+期間: ${input.start_date ?? '（未設定）'} 〜 ${input.target_date ?? '（未設定）'}
+
+【登録済みタスク】
+${taskSummary}
+
+このプロジェクトを完遂するために不足しているタスクを提案してください。`;
+
+  let raw = '';
+  try {
+    raw = await callAIForJson(PROJECT_TASKS_SYSTEM, userMessage);
+    const parsed = JSON.parse(raw) as { candidates?: Partial<ProjectTaskCandidate>[] };
+    const existingTitles = new Set(input.existingTasks.map(t => t.title.trim()));
+    const priorities = new Set(['none', 'low', 'medium', 'high']);
+
+    return (parsed.candidates ?? [])
+      .filter(c => typeof c.title === 'string' && c.title.trim().length > 0)
+      .filter(c => !existingTitles.has(c.title!.trim()))
+      .slice(0, 8)
+      .map(c => {
+        // 日付はフォーマット検証の上、プロジェクト期間内へクランプ（AI の期間逸脱対策）
+        let start = typeof c.start_date === 'string' && DATE_RE.test(c.start_date) ? c.start_date : null;
+        let due = typeof c.due_date === 'string' && DATE_RE.test(c.due_date) ? c.due_date : null;
+        if (input.start_date) {
+          if (start && start < input.start_date) start = input.start_date;
+          if (due && due < input.start_date) due = input.start_date;
+        }
+        if (input.target_date) {
+          if (start && start > input.target_date) start = input.target_date;
+          if (due && due > input.target_date) due = input.target_date;
+        }
+        if (start && due && start > due) [start, due] = [due, start];
+        return {
+          title: c.title!.trim().slice(0, 60),
+          description: typeof c.description === 'string' ? c.description.trim() : '',
+          priority: priorities.has(c.priority ?? '') ? c.priority as ProjectTaskCandidate['priority'] : 'none',
+          start_date: start,
+          due_date: due,
+          reason: typeof c.reason === 'string' ? c.reason.trim() : '',
+        };
+      });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const preview = raw.length > 0 ? `\n受信内容(先頭100文字): ${raw.slice(0, 100)}` : '';
+    throw new Error(`タスク案の生成に失敗しました: ${msg}${preview}`);
+  }
+}
+
 // ─── チェックリスト自動生成 ────────────────────────────────────
 
 export async function generateChecklist(task: {

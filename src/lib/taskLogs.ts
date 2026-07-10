@@ -1,7 +1,7 @@
 import { executeDb } from './db';
 
 export type ActorType = 'user' | 'ai';
-export type SourceType = 'manual' | 'memo' | 'daily_report' | 'weekly_report';
+export type SourceType = 'manual' | 'memo' | 'daily_report' | 'weekly_report' | 'project';
 export type ActionType = 'create' | 'update' | 'status_change' | 'delete' | 'archive' | 'restore' | 'pin' | 'unpin';
 
 export async function logTaskAction(params: {

@@ -3,14 +3,17 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { format, differenceInCalendarDays, addDays, isMonday } from 'date-fns';
 import {
   ArrowLeft, Plus, Pencil, Circle, CheckCircle, Clock, Loader, CalendarOff,
+  Sparkles, RefreshCw, AlertCircle,
 } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
 import { logTaskAction } from '../lib/taskLogs';
 import { pushProject, pushTask } from '../lib/supabase';
+import { generateProjectTasks, type ProjectTaskCandidate } from '../lib/ai';
 import { OrnateCard, CardHeading, PageHeader } from '../components/ClassicUI';
 import { ProjectModal, type ProjectFormData, type ProjectStatus } from '../components/ProjectModal';
 import { TaskModal, type TaskFormData, type TaskStatus } from '../components/TaskModal';
 import { TaskPeekModal } from '../components/TaskPeekModal';
+import { ProjectTaskSuggestPanel } from '../components/ProjectTaskSuggestPanel';
 import { TargetBadge } from './Projects';
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_COLOR, PRIORITY_COLOR, PRIORITY_LABEL } from '../lib/constants';
 
@@ -138,6 +141,9 @@ export default function ProjectDetail() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [peekTaskId, setPeekTaskId] = useState<number | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiCandidates, setAiCandidates] = useState<ProjectTaskCandidate[] | null>(null);
+  const [aiError, setAiError] = useState('');
 
   const loadAll = async () => {
     const [projRows, taskRows] = await Promise.all([
@@ -203,6 +209,33 @@ export default function ProjectDetail() {
     loadAll();
   };
 
+  const handleGenerateTasks = async () => {
+    if (!project) return;
+    setAiBusy(true);
+    setAiError('');
+    setAiCandidates(null);
+    try {
+      const result = await generateProjectTasks(
+        {
+          name: project.name,
+          description: project.description,
+          start_date: project.start_date,
+          target_date: project.target_date,
+          existingTasks: tasks.map(t => ({
+            title: t.title, status: t.status,
+            start_date: t.start_date, due_date: t.due_date,
+          })),
+        },
+        format(new Date(), 'yyyy-MM-dd')
+      );
+      setAiCandidates(result);
+    } catch (e: unknown) {
+      setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   if (!project) {
     return (
       <div className="space-y-6">
@@ -226,8 +259,8 @@ export default function ProjectDetail() {
   return (
     <div className="space-y-6">
       {/* ─── ヘッダー ─── */}
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-6">
+        <div className="flex-1 min-w-0">
           <button
             onClick={() => navigate('/projects')}
             className="flex items-center gap-1.5 text-xs text-sebastian-lightgray hover:text-sebastian-gray font-serif mb-2 transition-colors"
@@ -264,15 +297,82 @@ export default function ProjectDetail() {
             </p>
           )}
         </div>
-        <button
-          onClick={() => setShowTaskModal(true)}
-          className="mt-1 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-serif transition-colors shrink-0"
-          style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}
-        >
-          <Plus size={15} />
-          タスクを追加
-        </button>
+        <div className="mt-1 flex flex-col items-end gap-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleGenerateTasks}
+              disabled={aiBusy}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-serif transition-colors disabled:opacity-60"
+              style={{ backgroundColor: 'transparent', color: '#8a7340', border: '1px solid rgba(201,164,86,0.45)' }}
+              title="プロジェクト概要と登録済みタスクから、不足しているタスクを AI が提案します"
+            >
+              {aiBusy ? <RefreshCw size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              {aiBusy ? '考えております...' : 'AI タスク生成'}
+            </button>
+            <button
+              onClick={() => setShowTaskModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-serif transition-colors"
+              style={{ backgroundColor: '#131929', color: '#d4c9a8', border: '1px solid rgba(201,164,86,0.3)' }}
+            >
+              <Plus size={15} />
+              タスクを追加
+            </button>
+          </div>
+
+          {/* 概況プレート（真鍮の銘板イメージ） */}
+          {tasks.length > 0 && (
+            <div
+              className="rounded-lg px-6 py-4 self-stretch"
+              style={{ border: '1px solid rgba(201,164,86,0.35)', backgroundColor: 'rgba(201,164,86,0.06)' }}
+            >
+              <p className="text-xs font-serif tracking-widest text-sebastian-gold-dark mb-3">◆ 概況</p>
+              <dl className="space-y-2.5">
+                {project.target_date && project.status !== 'done' && project.status !== 'archived' && (() => {
+                  const days = differenceInCalendarDays(new Date(project.target_date + DAY0), new Date());
+                  return (
+                    <div className="flex items-baseline justify-between gap-10 text-sm font-serif">
+                      <dt className="text-sebastian-lightgray">残り日数</dt>
+                      <dd className={`text-base ${days <= 0 ? 'text-red-500' : 'text-sebastian-navy'}`}>
+                        {days < 0 ? `超過 ${-days} 日` : days === 0 ? '本日期日' : `${days} 日`}
+                      </dd>
+                    </div>
+                  );
+                })()}
+                <div className="flex items-baseline justify-between gap-10 text-sm font-serif">
+                  <dt className="text-sebastian-lightgray">タスク</dt>
+                  <dd className="text-base text-sebastian-navy">{doneCount} / {tasks.length} 完了</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-10 text-sm font-serif">
+                  <dt className="text-sebastian-lightgray">進捗率平均</dt>
+                  <dd className="text-base text-sebastian-navy">{avgProgress}%</dd>
+                </div>
+              </dl>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* ─── AI タスク生成: 候補の承認パネル ─── */}
+      {(aiCandidates != null || aiError) && (
+        <OrnateCard>
+          <div className="px-5 py-4">
+            <CardHeading>AI タスク生成</CardHeading>
+            {aiError ? (
+              <div className="flex items-start gap-2 text-sm text-red-700 py-1">
+                <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                <div className="flex-1 whitespace-pre-wrap font-serif">{aiError}</div>
+                <button onClick={() => setAiError('')} className="text-xs text-sebastian-lightgray hover:text-sebastian-navy font-serif shrink-0">閉じる</button>
+              </div>
+            ) : (
+              <ProjectTaskSuggestPanel
+                projectId={projectId}
+                candidates={aiCandidates!}
+                onApplied={() => { setAiCandidates(null); loadAll(); }}
+              />
+            )}
+          </div>
+        </OrnateCard>
+      )}
 
       {/* ─── 進捗サマリー ─── */}
       <OrnateCard>
