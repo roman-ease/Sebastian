@@ -16,12 +16,19 @@ export interface TaskFormData {
   due_date: string;
   category: string;
   progress: number;
+  project_id: number | null;
 }
 
 interface ChecklistItem {
   id: number;
   text: string;
   checked: number;
+}
+
+interface ProjectOption {
+  id: number;
+  name: string;
+  status: string;
 }
 
 interface Props {
@@ -43,8 +50,10 @@ export function TaskModal({ initialData, onSave, onClose, mode, taskId }: Props)
     due_date: initialData?.due_date ?? '',
     category: initialData?.category ?? '',
     progress: initialData?.progress ?? 0,
+    project_id: initialData?.project_id ?? null,
   });
 
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [newItemText, setNewItemText] = useState('');
   const [showNewItem, setShowNewItem] = useState(false);
@@ -57,6 +66,14 @@ export function TaskModal({ initialData, onSave, onClose, mode, taskId }: Props)
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  // プロジェクト選択肢（アーカイブ以外。現在割当中のものはステータス問わず含める）
+  useEffect(() => {
+    selectDb<ProjectOption>(
+      "SELECT id, name, status FROM projects WHERE status != 'archived' OR id = ? ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'hold' THEN 1 ELSE 2 END, name",
+      [initialData?.project_id ?? -1]
+    ).then(setProjects);
+  }, []);
 
   // 編集モードのときチェックリストを読み込む
   useEffect(() => {
@@ -235,16 +252,31 @@ export function TaskModal({ initialData, onSave, onClose, mode, taskId }: Props)
             </div>
           </div>
 
-          {/* カテゴリ */}
-          <div>
-            <label className="block text-sm text-sebastian-gray font-serif mb-1">カテゴリ</label>
-            <input
-              type="text"
-              className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 outline-none focus:border-sebastian-gold/50 transition-colors font-serif text-sebastian-text"
-              placeholder="例: 情シス, 研修, 採用"
-              value={form.category}
-              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-            />
+          {/* プロジェクト・カテゴリ */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-sebastian-gray font-serif mb-1">プロジェクト</label>
+              <select
+                className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 outline-none focus:border-sebastian-gold/50 transition-colors font-serif text-sebastian-text"
+                value={form.project_id ?? ''}
+                onChange={e => setForm(f => ({ ...f, project_id: e.target.value ? Number(e.target.value) : null }))}
+              >
+                <option value="">なし</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-sebastian-gray font-serif mb-1">カテゴリ</label>
+              <input
+                type="text"
+                className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 outline-none focus:border-sebastian-gold/50 transition-colors font-serif text-sebastian-text"
+                placeholder="例: 情シス, 研修"
+                value={form.category}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+              />
+            </div>
           </div>
 
           {/* 進捗率 */}

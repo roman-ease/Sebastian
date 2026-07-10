@@ -23,6 +23,8 @@ interface TaskDetail {
   due_date: string | null;
   category: string | null;
   progress: number;
+  project_id: number | null;
+  project_name: string | null;
 }
 
 interface ChecklistItem {
@@ -64,6 +66,11 @@ function describeLog(log: TaskLog): string {
     }
     case 'update': {
       if (!before || !after) return 'タスクを更新';
+      if ((before.project_id ?? null) !== (after.project_id ?? null)) {
+        if (after.project_id == null) return 'プロジェクト割当を解除';
+        if (before.project_id == null) return 'プロジェクトへ割当';
+        return 'プロジェクト割当を変更';
+      }
       if (before.priority !== after.priority)
         return `優先度: ${PRIORITY_LABEL[before.priority] ?? before.priority} → ${PRIORITY_LABEL[after.priority] ?? after.priority}`;
       if (before.progress !== after.progress)
@@ -123,7 +130,9 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
   const loadAll = () => {
     return Promise.all([
       selectDb<TaskDetail>(
-        'SELECT id, title, description, notes, priority, status, start_date, due_date, category, progress FROM tasks WHERE id = ?',
+        `SELECT id, title, description, notes, priority, status, start_date, due_date, category, progress, project_id,
+          (SELECT name FROM projects WHERE id = tasks.project_id) as project_name
+         FROM tasks WHERE id = ?`,
         [taskId]
       ),
       selectDb<ChecklistItem>(
@@ -316,8 +325,8 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
   const handleEditSave = async (data: TaskFormData) => {
     if (!task) return;
     await executeDb(
-      'UPDATE tasks SET title=?, description=?, notes=?, status=?, priority=?, start_date=?, due_date=?, category=?, progress=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-      [data.title, data.description || null, data.notes || null, data.status, data.priority, data.start_date || null, data.due_date || null, data.category || null, data.progress, task.id]
+      'UPDATE tasks SET title=?, description=?, notes=?, status=?, priority=?, start_date=?, due_date=?, category=?, progress=?, project_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+      [data.title, data.description || null, data.notes || null, data.status, data.priority, data.start_date || null, data.due_date || null, data.category || null, data.progress, data.project_id, task.id]
     );
     await logTaskAction({
       taskId: task.id,
@@ -394,6 +403,11 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
               {task.category && (
                 <span className="text-xs px-1.5 py-0.5 rounded border bg-gray-50 text-gray-500 border-gray-100">
                   {task.category}
+                </span>
+              )}
+              {task.project_name && (
+                <span className="text-xs px-1.5 py-0.5 rounded border border-sebastian-gold/30 text-sebastian-gold-dark" style={{ backgroundColor: 'rgba(201,164,86,0.08)' }}>
+                  ◆ {task.project_name}
                 </span>
               )}
             </div>
@@ -707,6 +721,7 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
           due_date: task.due_date ?? '',
           category: task.category ?? '',
           progress: task.progress,
+          project_id: task.project_id,
         }}
         onSave={handleEditSave}
         onClose={() => { setEditing(false); loadAll(); }}

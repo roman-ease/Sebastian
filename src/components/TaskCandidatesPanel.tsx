@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { Sparkles, Plus, RefreshCw, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { executeDb, selectDb } from '../lib/db';
 import { logTaskAction } from '../lib/taskLogs';
-import { type TaskCandidate } from '../lib/ai';
+import { pushTask } from '../lib/supabase';
+import { type TaskCandidate, type ProjectEntry } from '../lib/ai';
 import { PRIORITY_COLOR, PRIORITY_LABEL } from '../lib/constants';
 
 interface Props {
   candidates: TaskCandidate[];
+  projects?: ProjectEntry[];
   sourceDate: string;
   onApplied: () => void;
 }
@@ -28,13 +30,22 @@ const FIELD_LABEL: Record<string, string> = {
   category: 'カテゴリ',
 };
 
-export function TaskCandidatesPanel({ candidates, sourceDate, onApplied }: Props) {
+export function TaskCandidatesPanel({ candidates, projects = [], sourceDate, onApplied }: Props) {
   const [checked, setChecked] = useState<Set<number>>(() => new Set(candidates.map((_, i) => i)));
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [taskDetails, setTaskDetails] = useState<Record<number, FullTask>>({});
+
+  // 候補ごとのプロジェクト割当（AI 提案を初期値に、ユーザーが変更可能）
+  const [projectChoice, setProjectChoice] = useState<Record<number, number | null>>(() => {
+    const m: Record<number, number | null> = {};
+    candidates.forEach((c, i) => { m[i] = c.project_id ?? null; });
+    return m;
+  });
+  const projectName = (id: number | null) =>
+    id != null ? projects.find(p => p.id === id)?.name ?? null : null;
 
   // update候補の現在タスクデータを取得
   useEffect(() => {
@@ -66,24 +77,29 @@ export function TaskCandidatesPanel({ candidates, sourceDate, onApplied }: Props
   const handleApply = async () => {
     setApplying(true);
     setErrorMsg('');
-    const selected = candidates.filter((_, i) => checked.has(i));
     try {
-      for (const c of selected) {
+      for (let i = 0; i < candidates.length; i++) {
+        if (!checked.has(i)) continue;
+        const c = candidates[i];
         if (c.type === 'new') {
+          // 実在確認済みの選択値のみ使う（AI の幻覚 ID 対策は抽出側でも実施済み）
+          const projectId = projects.some(p => p.id === projectChoice[i]) ? projectChoice[i] : null;
           const result = await executeDb(
-            'INSERT INTO tasks (title, description, status, priority, due_date, category) VALUES (?, ?, ?, ?, ?, ?)',
-            [c.title, c.description || null, 'todo', c.priority, c.due_date || null, c.category || null]
+            'INSERT INTO tasks (title, description, status, priority, due_date, category, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [c.title, c.description || null, 'todo', c.priority, c.due_date || null, c.category || null, projectId]
           );
           await logTaskAction({
             taskId: result.lastInsertId as number,
             actionType: 'create',
-            afterJson: c,
+            afterJson: { ...c, project_id: projectId },
             actorType: 'ai',
             sourceType: 'daily_report',
             sourceId: sourceDate,
             note: c.reason,
           });
+          pushTask(result.lastInsertId as number);
         } else if (c.type === 'update' && c.target_task_id) {
+          // update 候補はプロジェクト割当を変更しない（既存の割当を保持）
           await executeDb(
             'UPDATE tasks SET description=?, priority=?, due_date=?, category=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
             [c.description || null, c.priority, c.due_date || null, c.category || null, c.target_task_id]
@@ -98,6 +114,7 @@ export function TaskCandidatesPanel({ candidates, sourceDate, onApplied }: Props
             sourceId: sourceDate,
             note: c.reason,
           });
+          pushTask(c.target_task_id);
         }
       }
       setApplied(true);
@@ -177,6 +194,11 @@ export function TaskCandidatesPanel({ candidates, sourceDate, onApplied }: Props
                     {c.category && (
                       <span className="text-xs text-sebastian-lightgray">{c.category}</span>
                     )}
+                    {c.type === 'new' && projectName(projectChoice[i]) && (
+                      <span className="text-xs px-1.5 py-0.5 rounded border border-sebastian-gold/30 text-sebastian-gold-dark" style={{ backgroundColor: 'rgba(201,164,86,0.08)' }}>
+                        ◆ {projectName(projectChoice[i])}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button
@@ -222,6 +244,21 @@ export function TaskCandidatesPanel({ candidates, sourceDate, onApplied }: Props
 
                   {c.description && c.type === 'new' && (
                     <p className="text-xs text-gray-600">{c.description}</p>
+                  )}
+                  {c.type === 'new' && projects.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-gray-400 w-20 flex-shrink-0">プロジェクト</span>
+                      <select
+                        value={projectChoice[i] ?? ''}
+                        onChange={e => setProjectChoice(prev => ({ ...prev, [i]: e.target.value ? Number(e.target.value) : null }))}
+                        className="py-1 pl-2 pr-6 text-xs bg-white border border-gray-200 rounded-lg text-gray-600 focus:outline-none focus:border-sebastian-gold/50"
+                      >
+                        <option value="">なし</option>
+                        {projects.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
                   <p className="text-xs text-gray-400 bg-gray-50 rounded px-2 py-1">
                     抽出元: 「{c.reason}」

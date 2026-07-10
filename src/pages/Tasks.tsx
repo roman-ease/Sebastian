@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Plus, Circle, CheckCircle, Clock, Loader, Trash2, AlertCircle, Archive, ArchiveRestore, ChevronDown, ChevronUp, Pin, PinOff, Search, X, ArrowUp, ArrowDown, Check, Pencil } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
@@ -19,6 +20,8 @@ interface Task {
   due_date: string | null;
   category: string | null;
   progress: number;
+  project_id: number | null;
+  project_name: string | null;
   checklist_total: number;
   checklist_done: number;
   archived: number;
@@ -68,14 +71,22 @@ const SORT_LABELS: { key: SortKey; label: string }[] = [
   { key: 'priority', label: '優先度' },
 ];
 
+interface AssignableProject {
+  id: number;
+  name: string;
+}
+
 export default function Tasks() {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [archivedTasks, setArchivedTasks] = useState<Task[]>([]);
+  const [allProjects, setAllProjects] = useState<AssignableProject[]>([]);
   const [filter, setFilter] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('created_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [projectFilter, setProjectFilter] = useState('');
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [peekTaskId, setPeekTaskId] = useState<number | null>(null);
@@ -86,22 +97,28 @@ export default function Tasks() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const loadTasks = async () => {
-    const [active, archived] = await Promise.all([
+    const [active, archived, projectRows] = await Promise.all([
       selectDb<Task>(
-        `SELECT tasks.id, title, description, notes, status, priority, start_date, due_date, category, progress, archived, pinned, created_at, updated_at,
+        `SELECT tasks.id, title, description, notes, status, priority, start_date, due_date, category, progress, project_id, archived, pinned, created_at, updated_at,
           (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
-          (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+          (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done,
+          (SELECT name FROM projects WHERE id = tasks.project_id) as project_name
          FROM tasks WHERE archived = 0`
       ),
       selectDb<Task>(
-        `SELECT tasks.id, title, description, notes, status, priority, start_date, due_date, category, progress, archived, pinned, created_at, updated_at,
+        `SELECT tasks.id, title, description, notes, status, priority, start_date, due_date, category, progress, project_id, archived, pinned, created_at, updated_at,
           (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id) as checklist_total,
-          (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done
+          (SELECT COUNT(*) FROM task_checklist WHERE task_id = tasks.id AND checked = 1) as checklist_done,
+          (SELECT name FROM projects WHERE id = tasks.project_id) as project_name
          FROM tasks WHERE archived = 1 ORDER BY updated_at DESC`
+      ),
+      selectDb<AssignableProject>(
+        "SELECT id, name FROM projects WHERE status IN ('active', 'hold') ORDER BY name"
       ),
     ]);
     setTasks(active);
     setArchivedTasks(archived);
+    setAllProjects(projectRows);
   };
 
   useEffect(() => {
@@ -113,6 +130,15 @@ export default function Tasks() {
     const set = new Set<string>();
     tasks.forEach(t => { if (t.category) set.add(t.category); });
     return [...set].sort((a, b) => a.localeCompare(b, 'ja'));
+  }, [tasks]);
+
+  // プロジェクト一覧（タスクから動的生成）
+  const projectOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    tasks.forEach(t => { if (t.project_id != null && t.project_name) map.set(t.project_id, t.project_name); });
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   }, [tasks]);
 
   // フィルタリング + ソート
@@ -127,6 +153,13 @@ export default function Tasks() {
     // カテゴリフィルター
     if (categoryFilter) {
       result = result.filter(t => t.category === categoryFilter);
+    }
+
+    // プロジェクトフィルター（'none' = 未割当）
+    if (projectFilter) {
+      result = projectFilter === 'none'
+        ? result.filter(t => t.project_id == null)
+        : result.filter(t => t.project_id === Number(projectFilter));
     }
 
     // キーワード検索
@@ -162,14 +195,14 @@ export default function Tasks() {
     });
 
     return result;
-  }, [tasks, filter, categoryFilter, searchQuery, sortKey, sortDir]);
+  }, [tasks, filter, categoryFilter, projectFilter, searchQuery, sortKey, sortDir]);
 
   const handleCreate = async (data: TaskFormData) => {
     setErrorMsg('');
     try {
       const result = await executeDb(
-        'INSERT INTO tasks (title, description, notes, status, priority, start_date, due_date, category, progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [data.title, data.description || null, data.notes || null, data.status, data.priority, data.start_date || null, data.due_date || null, data.category || null, data.progress]
+        'INSERT INTO tasks (title, description, notes, status, priority, start_date, due_date, category, progress, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [data.title, data.description || null, data.notes || null, data.status, data.priority, data.start_date || null, data.due_date || null, data.category || null, data.progress, data.project_id]
       );
       await logTaskAction({
         taskId: result.lastInsertId as number,
@@ -191,8 +224,8 @@ export default function Tasks() {
     setErrorMsg('');
     try {
       await executeDb(
-        'UPDATE tasks SET title=?, description=?, notes=?, status=?, priority=?, start_date=?, due_date=?, category=?, progress=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-        [data.title, data.description || null, data.notes || null, data.status, data.priority, data.start_date || null, data.due_date || null, data.category || null, data.progress, editingTask.id]
+        'UPDATE tasks SET title=?, description=?, notes=?, status=?, priority=?, start_date=?, due_date=?, category=?, progress=?, project_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        [data.title, data.description || null, data.notes || null, data.status, data.priority, data.start_date || null, data.due_date || null, data.category || null, data.progress, data.project_id, editingTask.id]
       );
       await logTaskAction({
         taskId: editingTask.id,
@@ -379,6 +412,35 @@ export default function Tasks() {
     }
   };
 
+  // 一括プロジェクト割当（'none' = 未割当に戻す）
+  const handleBulkProjectAssign = async (value: string) => {
+    if (!value || selectedIds.size === 0) return;
+    const newProjectId = value === 'none' ? null : Number(value);
+    if (newProjectId != null && !allProjects.some(p => p.id === newProjectId)) return;
+    try {
+      const targets = tasks.filter(t => selectedIds.has(t.id) && t.project_id !== newProjectId);
+      for (const t of targets) {
+        await executeDb(
+          'UPDATE tasks SET project_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+          [newProjectId, t.id]
+        );
+        await logTaskAction({
+          taskId: t.id,
+          actionType: 'update',
+          beforeJson: { project_id: t.project_id },
+          afterJson: { project_id: newProjectId },
+          actorType: 'user',
+        });
+        pushTask(t.id);
+      }
+      setSelectedIds(new Set());
+      loadTasks();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`一括プロジェクト割当に失敗しました: ${msg}`);
+    }
+  };
+
   const handleBulkArchive = async () => {
     if (selectedIds.size === 0) return;
     try {
@@ -401,11 +463,12 @@ export default function Tasks() {
     }
   };
 
-  const hasActiveFilters = searchQuery.trim() !== '' || categoryFilter !== '';
+  const hasActiveFilters = searchQuery.trim() !== '' || categoryFilter !== '' || projectFilter !== '';
 
   const clearFilters = () => {
     setSearchQuery('');
     setCategoryFilter('');
+    setProjectFilter('');
   };
 
   return (
@@ -474,6 +537,22 @@ export default function Tasks() {
             </button>
           )}
         </div>
+
+        {/* プロジェクトフィルター */}
+        {projectOptions.length > 0 && (
+          <select
+            value={projectFilter}
+            onChange={e => setProjectFilter(e.target.value)}
+            className="py-1.5 pl-3 pr-7 text-sm font-serif bg-white border border-sebastian-border rounded-lg text-sebastian-text focus:outline-none focus:border-sebastian-gold/50 appearance-none cursor-pointer"
+            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23999\' stroke-width=\'2\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
+          >
+            <option value="">プロジェクト: すべて</option>
+            {projectOptions.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+            <option value="none">未割当</option>
+          </select>
+        )}
 
         {/* カテゴリフィルター */}
         {categories.length > 0 && (
@@ -589,6 +668,15 @@ export default function Tasks() {
                     {task.title}
                   </button>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    {task.project_id != null && task.project_name && (
+                      <button
+                        onClick={() => navigate(`/projects/${task.project_id}`)}
+                        className="text-xs font-serif text-sebastian-gold-dark hover:underline underline-offset-1 transition-colors"
+                        title={`プロジェクト「${task.project_name}」を開く`}
+                      >
+                        ◆ {task.project_name}
+                      </button>
+                    )}
                     {task.category && (
                       <button
                         onClick={() => setCategoryFilter(task.category === categoryFilter ? '' : task.category!)}
@@ -812,6 +900,20 @@ export default function Tasks() {
               <option value="done">完了</option>
               <option value="hold">保留</option>
             </select>
+            {allProjects.length > 0 && (
+              <select
+                className="text-sm font-serif bg-transparent outline-none cursor-pointer"
+                style={{ color: '#d4c9a8' }}
+                value=""
+                onChange={e => { if (e.target.value) { handleBulkProjectAssign(e.target.value); (e.target as HTMLSelectElement).value = ''; } }}
+              >
+                <option value="" disabled>プロジェクトへ割当</option>
+                {allProjects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+                <option value="none">未割当に戻す</option>
+              </select>
+            )}
             <button onClick={handleBulkArchive} className="flex items-center gap-1.5 text-sm font-serif hover:text-white transition-colors" style={{ color: '#d4c9a8' }}>
               <Archive size={14} />
               アーカイブ
@@ -845,6 +947,7 @@ export default function Tasks() {
             due_date: editingTask.due_date ?? '',
             category: editingTask.category ?? '',
             progress: editingTask.progress,
+            project_id: editingTask.project_id,
           }}
           onSave={handleEdit}
           onClose={() => { setModalMode(null); setEditingTask(null); }}

@@ -63,6 +63,12 @@ export interface TaskCandidate {
   category: string;
   reason: string;
   target_task_id?: number;
+  project_id?: number | null;
+}
+
+export interface ProjectEntry {
+  id: number;
+  name: string;
 }
 
 // ─── Ollama ────────────────────────────────────────────────────
@@ -542,6 +548,7 @@ const TASK_EXTRACT_SYSTEM = `あなたは業務支援AIアシスタント「Seba
       "priority": "high|medium|low|none",
       "due_date": "yyyy-MM-dd形式、不明な場合は空文字",
       "category": "カテゴリ（情シス・研修・採用など、不明なら空文字）",
+      "project_id": "該当する既存プロジェクトのID（数値）。該当しない場合は null",
       "reason": "メモのどの部分からこの候補を抽出したか（原文の引用）"
     }
   ]
@@ -552,6 +559,7 @@ const TASK_EXTRACT_SYSTEM = `あなたは業務支援AIアシスタント「Seba
 - 曖昧なもの・すでに完了している作業は含めない
 - 既存タスクと重複する場合は type を "update" にして target_task_id を設定する
 - due_date は today を基準に「3週間後」などを計算して設定する
+- project_id はメモの内容が既存プロジェクトの一部だと明確に読み取れる場合のみ設定する（推測で割り当てない）
 - 候補がない場合は candidates を空配列にする`;
 
 // JSONレスポンスからコードフェンスや余分なテキストを除去する
@@ -721,11 +729,16 @@ ${taskList}
 export async function extractTaskCandidates(
   memoContent: string,
   existingTasks: TaskEntry[],
-  date: string
+  date: string,
+  projects: ProjectEntry[] = []
 ): Promise<TaskCandidate[]> {
   const existingTasksSummary = existingTasks.length > 0
     ? existingTasks.map(t => `- [ID:${t.id}] ${t.title}（${t.status}）`).join('\n')
     : '（既存タスクなし）';
+
+  const projectsSummary = projects.length > 0
+    ? projects.map(p => `- [ID:${p.id}] ${p.name}`).join('\n')
+    : '（プロジェクトなし）';
 
   const userMessage = `今日の日付: ${date}
 
@@ -735,13 +748,21 @@ ${memoContent.trim() || '（メモなし）'}
 【既存タスク一覧】
 ${existingTasksSummary}
 
+【進行中プロジェクト一覧】
+${projectsSummary}
+
 上記のメモから新規タスク候補・既存タスクの更新候補を抽出してください。`;
 
   let raw = '';
   try {
     raw = await callAIForJson(TASK_EXTRACT_SYSTEM, userMessage);
     const parsed = JSON.parse(raw) as { candidates?: TaskCandidate[] };
-    return parsed.candidates ?? [];
+    // AI が返した project_id は実在するものだけ通す（幻覚 ID の混入防止）
+    const validIds = new Set(projects.map(p => p.id));
+    return (parsed.candidates ?? []).map(c => ({
+      ...c,
+      project_id: c.project_id != null && validIds.has(Number(c.project_id)) ? Number(c.project_id) : null,
+    }));
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     const preview = raw.length > 0 ? `\n受信内容(先頭100文字): ${raw.slice(0, 100)}` : '';

@@ -5,7 +5,7 @@ import { Sparkles, CheckCircle, AlertCircle, Pencil } from 'lucide-react';
 import { selectDb, executeDb } from '../lib/db';
 import { pushDailyReport } from '../lib/supabase';
 import { PageHeader, OrnateCard, CardHeading } from '../components/ClassicUI';
-import { generateDailyReport, extractTaskCandidates, type TaskLogEntry, type TaskEntry, type TaskCandidate } from '../lib/ai';
+import { generateDailyReport, extractTaskCandidates, type TaskLogEntry, type TaskEntry, type TaskCandidate, type ProjectEntry } from '../lib/ai';
 import { getSetting, SETTING_KEYS } from '../lib/settings';
 import { TaskCandidatesPanel } from '../components/TaskCandidatesPanel';
 import { GeneratingAnimation } from '../components/GeneratingAnimation';
@@ -22,6 +22,7 @@ export default function DailyReport() {
 
   const [candidateState, setCandidateState] = useState<CandidateState>('idle');
   const [candidates, setCandidates] = useState<TaskCandidate[]>([]);
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [memoContent, setMemoContent] = useState('');
 
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -109,7 +110,11 @@ export default function DailyReport() {
     setErrorMsg('');
     try {
       const tasks = await selectDb<TaskEntry>('SELECT id, title, status, priority, category FROM tasks WHERE archived = 0 ORDER BY created_at DESC');
-      const result = await extractTaskCandidates(memoContent, tasks, today);
+      const projectRows = await selectDb<ProjectEntry>(
+        "SELECT id, name FROM projects WHERE status IN ('active', 'hold') ORDER BY name"
+      );
+      setProjects(projectRows);
+      const result = await extractTaskCandidates(memoContent, tasks, today, projectRows);
       setCandidates(result);
       setCandidateState('ready');
     } catch (e: unknown) {
@@ -182,6 +187,7 @@ export default function DailyReport() {
             {candidateState === 'ready' && (
               <TaskCandidatesPanel
                 candidates={candidates}
+                projects={projects}
                 sourceDate={today}
                 onApplied={() => setCandidateState('done')}
               />

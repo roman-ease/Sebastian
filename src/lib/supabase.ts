@@ -86,6 +86,55 @@ export async function pushMemo(date: string, content: string): Promise<void> {
   }
 }
 
+export async function pushProject(localId: number): Promise<void> {
+  try {
+    const client = await sb(); if (!client) return;
+    const rows = await selectDb<any>('SELECT * FROM projects WHERE id = ?', [localId]);
+    if (!rows.length) return;
+    const p = rows[0];
+    let syncId = p.sync_id;
+    if (!syncId) {
+      syncId = crypto.randomUUID();
+      await executeDb('UPDATE projects SET sync_id = ? WHERE id = ?', [syncId, localId]);
+    }
+    await client.from('projects').upsert({
+      id: syncId,
+      name: p.name, description: p.description, status: p.status,
+      start_date: p.start_date, target_date: p.target_date,
+      updated_at: new Date().toISOString(),
+    });
+    // deleted_at は payload に含めない（tasks と同じ tombstone 保持ルール）
+  } catch (e) {
+    console.error('[supabase] pushProject:', e);
+  }
+}
+
+export async function pushProjectDelete(syncId: string): Promise<void> {
+  try {
+    const client = await sb(); if (!client) return;
+    const now = new Date().toISOString();
+    await client.from('projects').update({ deleted_at: now, updated_at: now }).eq('id', syncId);
+  } catch (e) {
+    console.error('[supabase] pushProjectDelete:', e);
+  }
+}
+
+// tasks.project_id（ローカル整数 id）→ リモート projects の UUID に変換する。
+// プロジェクトがまだ sync_id を持たない場合は先に push して採番する。
+async function resolveProjectSyncId(localProjectId: number | null): Promise<string | null> {
+  if (localProjectId == null) return null;
+  const rows = await selectDb<{ sync_id: string | null }>(
+    'SELECT sync_id FROM projects WHERE id = ?', [localProjectId]
+  );
+  if (!rows.length) return null;
+  if (rows[0].sync_id) return rows[0].sync_id;
+  await pushProject(localProjectId);
+  const after = await selectDb<{ sync_id: string | null }>(
+    'SELECT sync_id FROM projects WHERE id = ?', [localProjectId]
+  );
+  return after[0]?.sync_id ?? null;
+}
+
 export async function pushTask(localId: number): Promise<void> {
   try {
     const client = await sb(); if (!client) return;
@@ -97,12 +146,14 @@ export async function pushTask(localId: number): Promise<void> {
       syncId = crypto.randomUUID();
       await executeDb('UPDATE tasks SET sync_id = ? WHERE id = ?', [syncId, localId]);
     }
+    const projectSyncId = await resolveProjectSyncId(t.project_id ?? null);
     await client.from('tasks').upsert({
       id: syncId,
       title: t.title, description: t.description, status: t.status,
       priority: t.priority, due_date: t.due_date, category: t.category,
       archived: !!t.archived, pinned: !!t.pinned, notes: t.notes,
       start_date: t.start_date, progress: t.progress,
+      project_id: projectSyncId,
       updated_at: new Date().toISOString(),
     });
     // 注: deleted_at は payload に含めない。tombstone 済みのリモート行を upsert しても
@@ -212,6 +263,10 @@ export async function pushWeeklyReport(weekStartDate: string, content: string): 
 
 export async function pushAllToSupabase(): Promise<void> {
   try {
+    // プロジェクトを先に push（tasks.project_id が参照する UUID を確定させる）
+    const projects = await selectDb<{ id: number }>('SELECT id FROM projects');
+    for (const p of projects) await pushProject(p.id);
+
     const tasks = await selectDb<{ id: number }>('SELECT id FROM tasks');
     for (const t of tasks) {
       await pushTask(t.id);
@@ -238,6 +293,8 @@ export async function pullFromSupabase(): Promise<void> {
   if (_pulling) return; // 多重実行ガード（60秒ポーリングが前回分と重ならないように）
   _pulling = true;
   try {
+    // projects を先に pull（pullTasks が project_id の UUID→ローカル id 変換に使う）
+    await pullProjects();
     await Promise.all([pullMemos(), pullTasks(), pullDailyReports(), pullWeeklyReports()]);
   } catch (e) {
     console.error('[supabase] pull:', e);
@@ -276,6 +333,57 @@ async function pullMemos(): Promise<void> {
   if (maxTs && !deferred) setLastPull('daily_memos', maxTs);
 }
 
+async function pullProjects(): Promise<void> {
+  const client = await sb(); if (!client) return;
+  const since = getLastPull('projects');
+  let q = client.from('projects').select('*');
+  if (since) q = q.gte('updated_at', since);
+  const { data } = await q;
+  if (!data) return;
+  let maxTs = since ?? '';
+
+  for (const p of data) {
+    if (typeof p.updated_at === 'string' && p.updated_at > maxTs) maxTs = p.updated_at;
+
+    const local = await selectDb<{ id: number; updated_at: string }>(
+      'SELECT id, updated_at FROM projects WHERE sync_id = ?', [p.id]
+    );
+
+    // tombstone: 削除済みはローカルも削除し、所属タスクは未割当に戻す
+    if (p.deleted_at) {
+      if (local.length) {
+        await executeDb('UPDATE tasks SET project_id = NULL WHERE project_id = ?', [local[0].id]);
+        await executeDb('DELETE FROM projects WHERE id = ?', [local[0].id]);
+      }
+      continue;
+    }
+
+    if (!local.length) {
+      await executeDb(
+        `INSERT INTO projects (name, description, status, start_date, target_date, sync_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [p.name, p.description, p.status, p.start_date, p.target_date, p.id, p.created_at, p.updated_at]
+      );
+    } else if (new Date(p.updated_at) > new Date(local[0].updated_at)) {
+      await executeDb(
+        `UPDATE projects SET name=?, description=?, status=?, start_date=?, target_date=?, updated_at=? WHERE id=?`,
+        [p.name, p.description, p.status, p.start_date, p.target_date, p.updated_at, local[0].id]
+      );
+    }
+  }
+
+  if (maxTs) setLastPull('projects', maxTs);
+}
+
+// リモート tasks.project_id（UUID）→ ローカル projects.id。見つからなければ null。
+async function localProjectIdFor(projectSyncId: string | null): Promise<number | null> {
+  if (!projectSyncId) return null;
+  const rows = await selectDb<{ id: number }>(
+    'SELECT id FROM projects WHERE sync_id = ?', [projectSyncId]
+  );
+  return rows[0]?.id ?? null;
+}
+
 async function pullTasks(): Promise<void> {
   const client = await sb(); if (!client) return;
   const since = getLastPull('tasks');
@@ -303,15 +411,16 @@ async function pullTasks(): Promise<void> {
 
     let localId: number;
     let remoteNewer = false;
+    const localProjectId = await localProjectIdFor(task.project_id ?? null);
     if (!local.length) {
       const res = await executeDb(
         `INSERT INTO tasks
           (title, description, status, priority, due_date, category,
-           archived, pinned, notes, start_date, progress, sync_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           archived, pinned, notes, start_date, progress, project_id, sync_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [task.title, task.description, task.status, task.priority, task.due_date,
          task.category, task.archived ? 1 : 0, task.pinned ? 1 : 0, task.notes,
-         task.start_date, task.progress, task.id, task.created_at, task.updated_at]
+         task.start_date, task.progress, localProjectId, task.id, task.created_at, task.updated_at]
       );
       localId = res.lastInsertId;
       remoteNewer = true;
@@ -322,11 +431,11 @@ async function pullTasks(): Promise<void> {
         await executeDb(
           `UPDATE tasks SET
             title=?, description=?, status=?, priority=?, due_date=?, category=?,
-            archived=?, pinned=?, notes=?, start_date=?, progress=?, updated_at=?
+            archived=?, pinned=?, notes=?, start_date=?, progress=?, project_id=?, updated_at=?
            WHERE id=?`,
           [task.title, task.description, task.status, task.priority, task.due_date,
            task.category, task.archived ? 1 : 0, task.pinned ? 1 : 0, task.notes,
-           task.start_date, task.progress, task.updated_at, localId]
+           task.start_date, task.progress, localProjectId, task.updated_at, localId]
         );
       }
     }

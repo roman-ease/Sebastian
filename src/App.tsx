@@ -8,6 +8,8 @@ import { MainLayout } from './components/layout/MainLayout';
 import Dashboard from './pages/Dashboard';
 import Memo from './pages/Memo';
 import Tasks from './pages/Tasks';
+import Projects from './pages/Projects';
+import ProjectDetail from './pages/ProjectDetail';
 import DailyReport from './pages/DailyReport';
 import WeeklyCalendar from './pages/WeeklyCalendar';
 import WeeklyReport from './pages/WeeklyReport';
@@ -123,6 +125,8 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="memo" element={<Memo />} />
         <Route path="tasks" element={<Tasks />} />
+        <Route path="projects" element={<Projects />} />
+        <Route path="projects/:id" element={<ProjectDetail />} />
         <Route path="calendar" element={<WeeklyCalendar />} />
         <Route path="reports/daily" element={<DailyReport />} />
         <Route path="reports/weekly" element={<WeeklyReport />} />
