@@ -160,6 +160,25 @@ npm run tauri dev
 npm run tauri build
 ```
 
+### macOS版（DMG）のインストール
+
+[Releases](https://github.com/roman-ease/Sebastian/releases) から `Sebastian_x.x.x_aarch64.dmg` をダウンロードし、`Sebastian.app` を `アプリケーション` フォルダにドラッグしてください。
+
+本アプリは Apple Developer 証明書による署名・公証を行っていないため、初回起動時に macOS の Gatekeeper により **「"Sebastian" は壊れているため開けません」** または **「開発元を確認できないため開けません」** と表示されます。
+
+起動するには、ターミナルで以下を実行して quarantine（検疫）属性を削除してください。
+
+```bash
+xattr -cr /Applications/Sebastian.app
+```
+
+その後、通常どおりダブルクリックで起動できます。
+
+> ⚠️ **免責事項**
+> 上記のコマンドは、macOS が未署名アプリに対して行う保護（Gatekeeper）を本アプリに限って解除するものです。
+> 実行は**自己責任**でお願いします。本アプリの利用により生じたいかなる損害についても、作者は責任を負いません。
+> 心配な場合は、ソースコードを確認のうえ、上記の「インストール・起動」の手順でご自身でビルドすることを推奨します。
+
 ### AI設定
 
 アプリ起動後、**設定 → AI設定** から使用するプロバイダーを選択してください。
