@@ -78,9 +78,11 @@ export async function pushMemo(date: string, content: string): Promise<void> {
       syncId = crypto.randomUUID();
       await executeDb('UPDATE daily_memos SET sync_id = ? WHERE date = ?', [syncId, date]);
     }
+    // throwOnError: supabase-js は既定でエラーを throw せず戻り値で返すため、
+    // 付けないと RLS 拒否等が catch にも掛からず完全に無音で失敗する
     await client.from('daily_memos').upsert({
       id: syncId, date, content, updated_at: new Date().toISOString(),
-    });
+    }).throwOnError();
   } catch (e) {
     console.error('[supabase] pushMemo:', e);
   }
@@ -102,7 +104,7 @@ export async function pushProject(localId: number): Promise<void> {
       name: p.name, description: p.description, status: p.status,
       start_date: p.start_date, target_date: p.target_date,
       updated_at: new Date().toISOString(),
-    });
+    }).throwOnError();
     // deleted_at は payload に含めない（tasks と同じ tombstone 保持ルール）
   } catch (e) {
     console.error('[supabase] pushProject:', e);
@@ -113,7 +115,7 @@ export async function pushProjectDelete(syncId: string): Promise<void> {
   try {
     const client = await sb(); if (!client) return;
     const now = new Date().toISOString();
-    await client.from('projects').update({ deleted_at: now, updated_at: now }).eq('id', syncId);
+    await client.from('projects').update({ deleted_at: now, updated_at: now }).eq('id', syncId).throwOnError();
   } catch (e) {
     console.error('[supabase] pushProjectDelete:', e);
   }
@@ -155,7 +157,7 @@ export async function pushTask(localId: number): Promise<void> {
       start_date: t.start_date, progress: t.progress,
       project_id: projectSyncId,
       updated_at: new Date().toISOString(),
-    });
+    }).throwOnError();
     // 注: deleted_at は payload に含めない。tombstone 済みのリモート行を upsert しても
     // ON CONFLICT は指定列のみ更新するため deleted_at は保持される（＝復活しない）。
   } catch (e) {
@@ -170,7 +172,7 @@ export async function pushTaskDelete(syncId: string): Promise<void> {
   try {
     const client = await sb(); if (!client) return;
     const now = new Date().toISOString();
-    await client.from('tasks').update({ deleted_at: now, updated_at: now }).eq('id', syncId);
+    await client.from('tasks').update({ deleted_at: now, updated_at: now }).eq('id', syncId).throwOnError();
   } catch (e) {
     console.error('[supabase] pushTaskDelete:', e);
   }
@@ -198,7 +200,7 @@ export async function pushChecklist(localTaskId: number): Promise<void> {
     }
 
     // Supabase 側をまるごと差し替え
-    await client.from('task_checklist').delete().eq('task_id', taskSyncId);
+    await client.from('task_checklist').delete().eq('task_id', taskSyncId).throwOnError();
     if (items.length > 0) {
       await client.from('task_checklist').insert(
         items.map((item: any) => ({
@@ -208,13 +210,13 @@ export async function pushChecklist(localTaskId: number): Promise<void> {
           checked: !!item.checked,
           sort_order: item.sort_order,
         }))
-      );
+      ).throwOnError();
     }
 
     // チェックリストだけ変えても他端末の pull で「リモートが新しい」と判定されるよう、
     // 親タスクの updated_at を進める（pull 側はこの値でチェックリスト置換の可否を決める）。
     const now = new Date().toISOString();
-    await client.from('tasks').update({ updated_at: now }).eq('id', taskSyncId);
+    await client.from('tasks').update({ updated_at: now }).eq('id', taskSyncId).throwOnError();
     await executeDb('UPDATE tasks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [localTaskId]);
   } catch (e) {
     console.error('[supabase] pushChecklist:', e);
@@ -234,7 +236,7 @@ export async function pushDailyReport(date: string, content: string): Promise<vo
     }
     await client.from('reports_daily').upsert({
       id: syncId, date, content, updated_at: new Date().toISOString(),
-    });
+    }).throwOnError();
   } catch (e) {
     console.error('[supabase] pushDailyReport:', e);
   }
@@ -253,7 +255,7 @@ export async function pushWeeklyReport(weekStartDate: string, content: string): 
     }
     await client.from('reports_weekly').upsert({
       id: syncId, week_start_date: weekStartDate, content, updated_at: new Date().toISOString(),
-    });
+    }).throwOnError();
   } catch (e) {
     console.error('[supabase] pushWeeklyReport:', e);
   }
