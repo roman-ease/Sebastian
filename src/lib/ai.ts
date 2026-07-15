@@ -2,7 +2,8 @@
 // プロバイダー: Gemini API / Claude / OpenAI / Groq / OpenRouter / LM Studio / Ollama / 無効
 // 設定画面でプロバイダーを切り替えられます。
 
-import { getSetting, SETTING_KEYS } from './settings';
+import { getSetting, SETTING_KEYS, customProviderSecretKey } from './settings';
+import { getSecret } from './secrets';
 import { selectDb } from './db';
 import { STATUS_LABEL, PRIORITY_LABEL } from './constants';
 
@@ -250,11 +251,14 @@ async function callCustomProvider(customId: string, systemPrompt: string, userMe
   const p = providers[0];
   if (!p) throw new Error(`カスタムプロバイダー "${customId}" が見つかりません`);
 
+  // キーはキーチェーンが正。api_key 列は移送前の旧 DB 向けフォールバック
+  const apiKey = (await getSecret(customProviderSecretKey(p.id))) || p.api_key || null;
+
   if (p.type === 'openai') {
-    return callOpenAICompatible(p.endpoint, p.api_key || null, p.model, systemPrompt, userMessage);
+    return callOpenAICompatible(p.endpoint, apiKey, p.model, systemPrompt, userMessage);
   } else if (p.type === 'claude') {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' };
-    if (p.api_key) headers['x-api-key'] = p.api_key;
+    if (apiKey) headers['x-api-key'] = apiKey;
     const res = await fetch(`${p.endpoint}/v1/messages`, {
       method: 'POST',
       headers,
@@ -563,7 +567,7 @@ const TASK_EXTRACT_SYSTEM = `あなたは業務支援AIアシスタント「Seba
 - 候補がない場合は candidates を空配列にする`;
 
 // JSONレスポンスからコードフェンスや余分なテキストを除去する
-function cleanJsonResponse(raw: string): string {
+export function cleanJsonResponse(raw: string): string {
   const s = raw.trim();
   // ```json ... ``` または ``` ... ``` 形式を除去
   const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/);

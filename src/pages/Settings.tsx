@@ -3,7 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { FolderOpen, CheckCircle, AlertCircle, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Upload, Download, Clock, FileDown, Pencil, Trash2, Plus, X, Play } from 'lucide-react';
-import { getSetting, setSetting, SETTING_KEYS } from '../lib/settings';
+import { getSetting, setSetting, SETTING_KEYS, customProviderSecretKey } from '../lib/settings';
+import { getSecret, setSecret, deleteSecret } from '../lib/secrets';
 import { PageHeader, OrnateCard, CardHeading } from '../components/ClassicUI';
 import { registerShortcut } from '../lib/shortcut';
 import { checkOllamaConnection, checkGeminiConnection, type OllamaStatus } from '../lib/ai';
@@ -52,6 +53,8 @@ interface SettingsForm {
   memoSyncFolder: string;
   supabaseProjectId: string;
   supabaseKey: string;
+  supabaseEmail: string;
+  supabasePassword: string;
 }
 
 export default function Settings() {
@@ -82,6 +85,8 @@ export default function Settings() {
     memoSyncFolder: '',
     supabaseProjectId: '',
     supabaseKey: '',
+    supabaseEmail: '',
+    supabasePassword: '',
   });
   const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
   const [showAddProvider, setShowAddProvider] = useState(false);
@@ -102,6 +107,7 @@ export default function Settings() {
   const [importing, setImporting] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [showSupabaseKey, setShowSupabaseKey] = useState(false);
+  const [showSupabasePassword, setShowSupabasePassword] = useState(false);
   const [supabaseTestStatus, setSupabaseTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [supabaseTesting, setSupabaseTesting] = useState(false);
   const [importStatus, setImportStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -118,7 +124,8 @@ export default function Settings() {
         lmstudioEndpoint, lmstudioModel,
         reminderEnabled, reminderTime, reminderWeekdaysOnly,
         syncFolderSetting, lastSyncAtSetting, memoSyncFolderSetting,
-        supabaseProjectIdSetting, supabaseKeySetting] = await Promise.all([
+        supabaseProjectIdSetting, supabaseKeySetting,
+        supabaseEmailSetting, supabasePasswordSetting] = await Promise.all([
         getSetting(SETTING_KEYS.DAILY_REPORT_PATH),
         getSetting(SETTING_KEYS.WEEKLY_REPORT_PATH),
         getSetting(SETTING_KEYS.GLOBAL_SHORTCUT),
@@ -147,6 +154,8 @@ export default function Settings() {
         getSetting(SETTING_KEYS.MEMO_SYNC_FOLDER),
         getSetting(SETTING_KEYS.SUPABASE_PROJECT_ID),
         getSetting(SETTING_KEYS.SUPABASE_KEY),
+        getSetting(SETTING_KEYS.SUPABASE_EMAIL),
+        getSetting(SETTING_KEYS.SUPABASE_PASSWORD),
       ]);
       const syncFolderVal = syncFolderSetting ?? '';
       setLastSyncAt(lastSyncAtSetting ?? null);
@@ -184,6 +193,8 @@ export default function Settings() {
         memoSyncFolder: memoSyncFolderSetting ?? '',
         supabaseProjectId: supabaseProjectIdSetting ?? '',
         supabaseKey: supabaseKeySetting ?? '',
+        supabaseEmail: supabaseEmailSetting ?? '',
+        supabasePassword: supabasePasswordSetting ?? '',
       });
     }
     load();
@@ -336,12 +347,15 @@ export default function Settings() {
   const saveCustomProvider = async () => {
     const { id, name, type, endpoint, apiKey, model } = providerForm;
     if (!id || !name || !endpoint || !model) return;
+    // API キーは平文列に置かずキーチェーンへ（空文字は Rust 側で削除扱い）
     if (editingProvider) {
-      await executeDb('UPDATE custom_providers SET name=?, type=?, endpoint=?, api_key=?, model=? WHERE id=?',
-        [name, type, endpoint, apiKey || null, model, editingProvider.id]);
+      await executeDb('UPDATE custom_providers SET name=?, type=?, endpoint=?, api_key=NULL, model=? WHERE id=?',
+        [name, type, endpoint, model, editingProvider.id]);
+      await setSecret(customProviderSecretKey(editingProvider.id), apiKey);
     } else {
-      await executeDb('INSERT INTO custom_providers (id, name, type, endpoint, api_key, model) VALUES (?, ?, ?, ?, ?, ?)',
-        [id, name, type, endpoint, apiKey || null, model]);
+      await executeDb('INSERT INTO custom_providers (id, name, type, endpoint, api_key, model) VALUES (?, ?, ?, ?, NULL, ?)',
+        [id, name, type, endpoint, model]);
+      if (apiKey) await setSecret(customProviderSecretKey(id), apiKey);
     }
     const rows = await selectDb<CustomProvider>('SELECT * FROM custom_providers ORDER BY created_at ASC');
     setCustomProviders(rows);
@@ -352,6 +366,7 @@ export default function Settings() {
 
   const deleteCustomProvider = async (id: string) => {
     await executeDb('DELETE FROM custom_providers WHERE id=?', [id]);
+    await deleteSecret(customProviderSecretKey(id));
     setCustomProviders(prev => prev.filter(p => p.id !== id));
     if (form.aiProvider === `custom:${id}`) {
       setForm(f => ({ ...f, aiProvider: 'disabled' as AiProvider }));
@@ -389,6 +404,8 @@ export default function Settings() {
         setSetting(SETTING_KEYS.MEMO_SYNC_FOLDER, form.memoSyncFolder),
         setSetting(SETTING_KEYS.SUPABASE_PROJECT_ID, form.supabaseProjectId),
         setSetting(SETTING_KEYS.SUPABASE_KEY, form.supabaseKey),
+        setSetting(SETTING_KEYS.SUPABASE_EMAIL, form.supabaseEmail),
+        setSetting(SETTING_KEYS.SUPABASE_PASSWORD, form.supabasePassword),
       ]);
 
       try {
@@ -845,7 +862,7 @@ export default function Settings() {
                   <span className="text-xs px-2 py-0.5 rounded border border-sebastian-border/60 text-sebastian-lightgray font-serif">
                     {p.type === 'openai' ? 'OpenAI互換' : 'Claude互換'}
                   </span>
-                  <button onClick={() => { setEditingProvider(p); setProviderForm({ id: p.id, name: p.name, type: p.type, endpoint: p.endpoint, apiKey: p.api_key ?? '', model: p.model }); setShowAddProvider(true); }}
+                  <button onClick={async () => { setEditingProvider(p); const storedKey = await getSecret(customProviderSecretKey(p.id)); setProviderForm({ id: p.id, name: p.name, type: p.type, endpoint: p.endpoint, apiKey: storedKey ?? p.api_key ?? '', model: p.model }); setShowAddProvider(true); }}
                     className="text-sebastian-lightgray hover:text-sebastian-gold transition-colors"><Pencil size={14} /></button>
                   <button onClick={() => deleteCustomProvider(p.id)}
                     className="text-sebastian-lightgray hover:text-red-400 transition-colors"><Trash2 size={14} /></button>
@@ -1167,6 +1184,40 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* 認証（RLS 用） */}
+          <div className="space-y-1.5">
+            <label className="block text-sm text-sebastian-gray">認証メールアドレス</label>
+            <input
+              type="text"
+              className="w-full bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none focus:border-sebastian-gold/60"
+              placeholder="Supabase Authentication に登録したユーザーのメール"
+              value={form.supabaseEmail}
+              onChange={e => setForm(f => ({ ...f, supabaseEmail: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm text-sebastian-gray">認証パスワード</label>
+            <div className="flex gap-2">
+              <input
+                type={showSupabasePassword ? 'text' : 'password'}
+                className="flex-1 bg-sebastian-parchment/50 border border-sebastian-border rounded-lg px-3 py-2 text-sm text-sebastian-text outline-none focus:border-sebastian-gold/60"
+                placeholder="RLS 有効時に必須（未設定なら anon のまま接続）"
+                value={form.supabasePassword}
+                onChange={e => setForm(f => ({ ...f, supabasePassword: e.target.value }))}
+              />
+              <button
+                type="button"
+                onClick={() => setShowSupabasePassword(v => !v)}
+                className="px-3 py-2 bg-sebastian-border/30 text-sebastian-gray rounded-lg hover:bg-sebastian-border/50 transition-colors"
+              >
+                {showSupabasePassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+            <p className="text-xs text-sebastian-lightgray">
+              テーブルの RLS を有効化している場合、ここで認証しないと同期がすべて拒否されます。パスワードは OS のキーチェーンに保管されます。
+            </p>
+          </div>
+
           {/* 接続テスト */}
           <div className="flex items-center gap-3">
             <button
@@ -1180,10 +1231,21 @@ export default function Settings() {
                 try {
                   const { createClient } = await import('@supabase/supabase-js');
                   const url = `https://${form.supabaseProjectId}.supabase.co`;
-                  const client = createClient(url, form.supabaseKey);
+                  // 本体クライアントの localStorage セッションを汚さないよう、テストは非永続で行う
+                  const client = createClient(url, form.supabaseKey, {
+                    auth: { persistSession: false, autoRefreshToken: false },
+                  });
+                  let authed = false;
+                  if (form.supabaseEmail && form.supabasePassword) {
+                    const { error: authError } = await client.auth.signInWithPassword({
+                      email: form.supabaseEmail, password: form.supabasePassword,
+                    });
+                    if (authError) throw new Error(`サインイン失敗: ${authError.message}`);
+                    authed = true;
+                  }
                   const { error } = await client.from('tasks').select('id').limit(1);
                   if (error) throw new Error(error.message);
-                  setSupabaseTestStatus({ ok: true, msg: '接続できました' });
+                  setSupabaseTestStatus({ ok: true, msg: authed ? '接続・サインインともに成功しました' : '接続できました（認証なし）' });
                 } catch (e) {
                   setSupabaseTestStatus({ ok: false, msg: `接続失敗: ${e instanceof Error ? e.message : String(e)}` });
                 } finally {

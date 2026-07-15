@@ -1,6 +1,12 @@
 import { selectDb, executeDb } from './db';
 import { getSecret, setSecret } from './secrets';
 
+// カスタムプロバイダーの API キーは custom_providers.api_key（平文列）ではなく
+// OS キーチェーンに置く。行との対応はこのキー名で取る。
+export function customProviderSecretKey(id: string): string {
+  return `custom_provider_api_key_${id}`;
+}
+
 export const SETTING_KEYS = {
   DAILY_REPORT_PATH: 'daily_report_path',
   WEEKLY_REPORT_PATH: 'weekly_report_path',
@@ -32,6 +38,8 @@ export const SETTING_KEYS = {
   MEMO_SYNC_FOLDER: 'memo_sync_folder',
   SUPABASE_PROJECT_ID: 'supabase_project_id',
   SUPABASE_KEY: 'supabase_key',
+  SUPABASE_EMAIL: 'supabase_email',
+  SUPABASE_PASSWORD: 'supabase_password',
 } as const;
 
 // 機密値（API キー・Supabase 匿名キー）は平文 SQLite ではなく OS キーチェーンに置く。
@@ -44,6 +52,7 @@ export const SECRET_KEYS: ReadonlySet<string> = new Set<string>([
   SETTING_KEYS.GROQ_API_KEY,
   SETTING_KEYS.OPENROUTER_API_KEY,
   SETTING_KEYS.SUPABASE_KEY,
+  SETTING_KEYS.SUPABASE_PASSWORD,
 ]);
 
 export async function getSetting(key: string): Promise<string | null> {
@@ -82,6 +91,18 @@ export async function migrateSecretsToKeychain(): Promise<void> {
     } catch (e) {
       console.error('[secrets] migrate failed:', key, e);
     }
+  }
+  // custom_providers.api_key の平文もキーチェーンへ移送して列を空にする
+  try {
+    const rows = await selectDb<{ id: string; api_key: string | null }>(
+      'SELECT id, api_key FROM custom_providers WHERE api_key IS NOT NULL'
+    );
+    for (const r of rows) {
+      if (r.api_key) await setSecret(customProviderSecretKey(r.id), r.api_key);
+      await executeDb('UPDATE custom_providers SET api_key = NULL WHERE id = ?', [r.id]);
+    }
+  } catch (e) {
+    console.error('[secrets] custom provider migrate failed:', e);
   }
 }
 

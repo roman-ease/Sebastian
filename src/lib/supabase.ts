@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { executeDb, selectDb } from './db';
 import { getSetting, SETTING_KEYS } from './settings';
+import { reportSyncOk, reportSyncError } from './syncStatus';
 
 let _client: SupabaseClient | null = null;
 let _cachedUrl = '';
@@ -16,7 +17,35 @@ export async function getSupabaseClient(): Promise<SupabaseClient | null> {
     _cachedUrl = url;
     _cachedKey = key;
   }
+  await ensureAuth(_client);
   return _client;
+}
+
+// ─── Supabase Auth ────────────────────────────────────────────────────────────
+// テーブルは RLS で「authenticated ロールのみ全操作可」に制限しているため、
+// anon キーだけではデータに触れない。設定済みのメール/パスワードでセッションを確立してから使う。
+// 認証情報が未設定なら従来どおり anon のまま通す（RLS 未設定の環境との互換）。
+// セッションは supabase-js が localStorage に永続化・自動リフレッシュするので、
+// サインインが走るのは初回と期限切れ時のみ。
+let _signInPromise: Promise<void> | null = null;
+
+async function ensureAuth(client: SupabaseClient): Promise<void> {
+  const { data: { session } } = await client.auth.getSession();
+  if (session) return;
+  if (!_signInPromise) {
+    _signInPromise = (async () => {
+      try {
+        const email = await getSetting(SETTING_KEYS.SUPABASE_EMAIL);
+        const password = await getSetting(SETTING_KEYS.SUPABASE_PASSWORD);
+        if (!email || !password) return;
+        const { error } = await client.auth.signInWithPassword({ email, password });
+        if (error) console.error('[supabase] サインイン失敗:', error.message);
+      } finally {
+        _signInPromise = null;
+      }
+    })();
+  }
+  await _signInPromise;
 }
 
 // 後方互換: 直接 supabase を使っている箇所向け（内部用）
@@ -51,6 +80,19 @@ function setLastPull(table: string, iso: string): void {
   }
 }
 
+// ─── タイムスタンプ比較 ───────────────────────────────────────────────────────
+// ローカルの updated_at は SQLite CURRENT_TIMESTAMP（UTC の「YYYY-MM-DD HH:MM:SS」・
+// タイムゾーン記号なし）で、new Date() はこれをローカル時刻として解釈してしまう
+// （JST だと実際より9時間古い扱いになり、直近のローカル編集がリモートに負ける）。
+// 素の形式は UTC として解釈して ms に直し、リモートの ISO(Z付き) と正しく比較する。
+// ローカル列には pull で書き戻した ISO 文字列も混在するため、形式を見て分岐する。
+export function tsToMs(ts: string | null | undefined): number {
+  if (!ts) return 0;
+  const naive = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(ts);
+  const ms = new Date(naive ? ts.replace(' ', 'T') + 'Z' : ts).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
 // ─── 編集中ガード ─────────────────────────────────────────────────────────────
 // メモ等を入力している最中に pull が走ると、未 push のローカル本文が LWW で上書きされ得る。
 // 編集中の行（table:key）を登録し、pull はその行をスキップする。
@@ -83,8 +125,10 @@ export async function pushMemo(date: string, content: string): Promise<void> {
     await client.from('daily_memos').upsert({
       id: syncId, date, content, updated_at: new Date().toISOString(),
     }).throwOnError();
+    reportSyncOk();
   } catch (e) {
     console.error('[supabase] pushMemo:', e);
+    reportSyncError('pushMemo', e);
   }
 }
 
@@ -106,8 +150,10 @@ export async function pushProject(localId: number): Promise<void> {
       updated_at: new Date().toISOString(),
     }).throwOnError();
     // deleted_at は payload に含めない（tasks と同じ tombstone 保持ルール）
+    reportSyncOk();
   } catch (e) {
     console.error('[supabase] pushProject:', e);
+    reportSyncError('pushProject', e);
   }
 }
 
@@ -116,8 +162,10 @@ export async function pushProjectDelete(syncId: string): Promise<void> {
     const client = await sb(); if (!client) return;
     const now = new Date().toISOString();
     await client.from('projects').update({ deleted_at: now, updated_at: now }).eq('id', syncId).throwOnError();
+    reportSyncOk();
   } catch (e) {
     console.error('[supabase] pushProjectDelete:', e);
+    reportSyncError('pushProjectDelete', e);
   }
 }
 
@@ -160,8 +208,10 @@ export async function pushTask(localId: number): Promise<void> {
     }).throwOnError();
     // 注: deleted_at は payload に含めない。tombstone 済みのリモート行を upsert しても
     // ON CONFLICT は指定列のみ更新するため deleted_at は保持される（＝復活しない）。
+    reportSyncOk();
   } catch (e) {
     console.error('[supabase] pushTask:', e);
+    reportSyncError('pushTask', e);
   }
 }
 
@@ -173,8 +223,10 @@ export async function pushTaskDelete(syncId: string): Promise<void> {
     const client = await sb(); if (!client) return;
     const now = new Date().toISOString();
     await client.from('tasks').update({ deleted_at: now, updated_at: now }).eq('id', syncId).throwOnError();
+    reportSyncOk();
   } catch (e) {
     console.error('[supabase] pushTaskDelete:', e);
+    reportSyncError('pushTaskDelete', e);
   }
 }
 
@@ -218,8 +270,10 @@ export async function pushChecklist(localTaskId: number): Promise<void> {
     const now = new Date().toISOString();
     await client.from('tasks').update({ updated_at: now }).eq('id', taskSyncId).throwOnError();
     await executeDb('UPDATE tasks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [localTaskId]);
+    reportSyncOk();
   } catch (e) {
     console.error('[supabase] pushChecklist:', e);
+    reportSyncError('pushChecklist', e);
   }
 }
 
@@ -237,8 +291,10 @@ export async function pushDailyReport(date: string, content: string): Promise<vo
     await client.from('reports_daily').upsert({
       id: syncId, date, content, updated_at: new Date().toISOString(),
     }).throwOnError();
+    reportSyncOk();
   } catch (e) {
     console.error('[supabase] pushDailyReport:', e);
+    reportSyncError('pushDailyReport', e);
   }
 }
 
@@ -256,8 +312,10 @@ export async function pushWeeklyReport(weekStartDate: string, content: string): 
     await client.from('reports_weekly').upsert({
       id: syncId, week_start_date: weekStartDate, content, updated_at: new Date().toISOString(),
     }).throwOnError();
+    reportSyncOk();
   } catch (e) {
     console.error('[supabase] pushWeeklyReport:', e);
+    reportSyncError('pushWeeklyReport', e);
   }
 }
 
@@ -282,8 +340,11 @@ export async function pushAllToSupabase(): Promise<void> {
 
     const weekly = await selectDb<{ week_start_date: string; content: string }>('SELECT week_start_date, content FROM reports_weekly');
     for (const r of weekly) await pushWeeklyReport(r.week_start_date, r.content);
+    // reportSyncOk は呼ばない: 個々の push が成否を報告済みで、ここで ok にすると
+    // 内側で握りつぶされた失敗を上書きしてしまう
   } catch (e) {
     console.error('[supabase] pushAllToSupabase:', e);
+    reportSyncError('pushAllToSupabase', e);
   }
 }
 
@@ -298,8 +359,10 @@ export async function pullFromSupabase(): Promise<void> {
     // projects を先に pull（pullTasks が project_id の UUID→ローカル id 変換に使う）
     await pullProjects();
     await Promise.all([pullMemos(), pullTasks(), pullDailyReports(), pullWeeklyReports()]);
+    reportSyncOk();
   } catch (e) {
     console.error('[supabase] pull:', e);
+    reportSyncError('pull', e);
   } finally {
     _pulling = false;
   }
@@ -310,7 +373,7 @@ async function pullMemos(): Promise<void> {
   const since = getLastPull('daily_memos');
   let q = client.from('daily_memos').select('*');
   if (since) q = q.gte('updated_at', since);
-  const { data } = await q;
+  const { data } = await q.throwOnError();
   if (!data) return;
   let maxTs = since ?? '';
   let deferred = false; // 編集中で飛ばした行がある間は lastPull を進めない
@@ -325,7 +388,7 @@ async function pullMemos(): Promise<void> {
         'INSERT INTO daily_memos (date, content, sync_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
         [row.date, row.content, row.id, row.created_at, row.updated_at]
       );
-    } else if (new Date(row.updated_at) > new Date(local[0].updated_at)) {
+    } else if (tsToMs(row.updated_at) > tsToMs(local[0].updated_at)) {
       await executeDb(
         'UPDATE daily_memos SET content = ?, sync_id = ?, updated_at = ? WHERE date = ?',
         [row.content, row.id, row.updated_at, row.date]
@@ -340,7 +403,7 @@ async function pullProjects(): Promise<void> {
   const since = getLastPull('projects');
   let q = client.from('projects').select('*');
   if (since) q = q.gte('updated_at', since);
-  const { data } = await q;
+  const { data } = await q.throwOnError();
   if (!data) return;
   let maxTs = since ?? '';
 
@@ -366,7 +429,7 @@ async function pullProjects(): Promise<void> {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [p.name, p.description, p.status, p.start_date, p.target_date, p.id, p.created_at, p.updated_at]
       );
-    } else if (new Date(p.updated_at) > new Date(local[0].updated_at)) {
+    } else if (tsToMs(p.updated_at) > tsToMs(local[0].updated_at)) {
       await executeDb(
         `UPDATE projects SET name=?, description=?, status=?, start_date=?, target_date=?, updated_at=? WHERE id=?`,
         [p.name, p.description, p.status, p.start_date, p.target_date, p.updated_at, local[0].id]
@@ -391,7 +454,7 @@ async function pullTasks(): Promise<void> {
   const since = getLastPull('tasks');
   let q = client.from('tasks').select('*, task_checklist(*)');
   if (since) q = q.gte('updated_at', since);
-  const { data: tasks } = await q;
+  const { data: tasks } = await q.throwOnError();
   if (!tasks) return;
   let maxTs = since ?? '';
 
@@ -428,7 +491,7 @@ async function pullTasks(): Promise<void> {
       remoteNewer = true;
     } else {
       localId = local[0].id;
-      remoteNewer = new Date(task.updated_at) > new Date(local[0].updated_at);
+      remoteNewer = tsToMs(task.updated_at) > tsToMs(local[0].updated_at);
       if (remoteNewer) {
         await executeDb(
           `UPDATE tasks SET
@@ -465,7 +528,7 @@ async function pullDailyReports(): Promise<void> {
   const since = getLastPull('reports_daily');
   let q = client.from('reports_daily').select('*');
   if (since) q = q.gte('updated_at', since);
-  const { data } = await q;
+  const { data } = await q.throwOnError();
   if (!data) return;
   let maxTs = since ?? '';
   let deferred = false;
@@ -480,7 +543,7 @@ async function pullDailyReports(): Promise<void> {
         'INSERT INTO reports_daily (date, content, sync_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
         [row.date, row.content, row.id, row.created_at, row.updated_at]
       );
-    } else if (new Date(row.updated_at) > new Date(local[0].updated_at)) {
+    } else if (tsToMs(row.updated_at) > tsToMs(local[0].updated_at)) {
       await executeDb(
         'UPDATE reports_daily SET content = ?, sync_id = ?, updated_at = ? WHERE date = ?',
         [row.content, row.id, row.updated_at, row.date]
@@ -495,7 +558,7 @@ async function pullWeeklyReports(): Promise<void> {
   const since = getLastPull('reports_weekly');
   let q = client.from('reports_weekly').select('*');
   if (since) q = q.gte('updated_at', since);
-  const { data } = await q;
+  const { data } = await q.throwOnError();
   if (!data) return;
   let maxTs = since ?? '';
   let deferred = false;
@@ -510,7 +573,7 @@ async function pullWeeklyReports(): Promise<void> {
         'INSERT INTO reports_weekly (week_start_date, content, sync_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
         [row.week_start_date, row.content, row.id, row.created_at, row.updated_at]
       );
-    } else if (new Date(row.updated_at) > new Date(local[0].updated_at)) {
+    } else if (tsToMs(row.updated_at) > tsToMs(local[0].updated_at)) {
       await executeDb(
         'UPDATE reports_weekly SET content = ?, sync_id = ?, updated_at = ? WHERE week_start_date = ?',
         [row.content, row.id, row.updated_at, row.week_start_date]

@@ -160,6 +160,20 @@ export function TaskPeekModal({ taskId, onClose }: Props) {
     if (showNewItem) newItemRef.current?.focus();
   }, [showNewItem]);
 
+  // Escape で閉じる。入力欄（進捗編集・新規チェック項目など）は各自の Escape 処理を
+  // 持つため、フォーカスが入力系にある間は閉じない。上に重なる編集モーダル
+  // （TaskModal）表示中も、そちらだけが閉じるべきなので反応しない。
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || editing) return;
+      const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editing, onClose]);
+
   const reloadLogs = async () => {
     const rows = await selectDb<TaskLog>(
       'SELECT id, action_type, before_json, after_json, actor_type, created_at FROM task_logs WHERE task_id = ? ORDER BY created_at DESC LIMIT 30',

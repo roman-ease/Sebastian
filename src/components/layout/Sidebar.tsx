@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, PenLine, ListTodo, Calendar,
-  FileText, BookOpen, Settings, Sun, Moon, Sunset, Search, FolderOpen,
+  FileText, BookOpen, Settings, Sun, Moon, Sunset, Search, FolderOpen, CloudOff,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { type Theme, loadAndApplyTheme, saveTheme } from '../../lib/theme';
@@ -13,6 +13,7 @@ import {
   FALLBACK_BUTLER_BRIEFING,
   type ButlerBriefing,
 } from '../../lib/ai';
+import { SYNC_STATUS_EVENT, getSyncStatus, type SyncStatusInfo } from '../../lib/syncStatus';
 
 const NAV_GROUPS = [
   {
@@ -68,11 +69,22 @@ export function Sidebar() {
   const [bubble, setBubble] = useState<string | null>(null);
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── クラウド同期の失敗表示（syncStatus からのイベント購読）
+  const [syncError, setSyncError] = useState<string | null>(null);
+
   useEffect(() => {
     loadAndApplyTheme().then(setTheme).catch(console.warn);
     loadBriefing();
+    const initial = getSyncStatus();
+    setSyncError(initial.state === 'error' ? initial.lastError : null);
+    const onSyncStatus = (e: Event) => {
+      const s = (e as CustomEvent<SyncStatusInfo>).detail;
+      setSyncError(s.state === 'error' ? s.lastError : null);
+    };
+    window.addEventListener(SYNC_STATUS_EVENT, onSyncStatus);
     return () => {
       if (bubbleTimer.current) clearTimeout(bubbleTimer.current);
+      window.removeEventListener(SYNC_STATUS_EVENT, onSyncStatus);
     };
   }, []);
 
@@ -315,12 +327,28 @@ export function Sidebar() {
         </div>
       </div>
 
+      {/* ─── 同期エラー表示 ─── */}
+      {syncError && (
+        <div
+          className="mx-3 mb-2 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 text-[10px] font-serif"
+          style={{
+            color: '#d08a5a',
+            backgroundColor: 'rgba(208,138,90,0.08)',
+            border: '1px solid rgba(208,138,90,0.3)',
+          }}
+          title={syncError}
+        >
+          <CloudOff size={11} className="flex-shrink-0" />
+          <span>クラウド同期に失敗しています</span>
+        </div>
+      )}
+
       {/* ─── バージョン ─── */}
       <p
         className="px-3 pb-4 text-[11px] text-center font-serif w-full"
         style={{ color: 'rgba(212,201,168,0.2)' }}
       >
-        AI Work Supporter v1.3.1
+        AI Work Supporter v1.3.2
       </p>
     </aside>
   );
